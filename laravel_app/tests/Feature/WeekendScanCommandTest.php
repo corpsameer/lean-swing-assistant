@@ -7,21 +7,11 @@ use App\Models\Run;
 use App\Models\Symbol;
 use App\Models\WatchlistCandidate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use PDO;
 use Tests\TestCase;
 
 class WeekendScanCommandTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (! in_array('sqlite', PDO::getAvailableDrivers(), true)) {
-            $this->markTestSkipped('pdo_sqlite driver is not available in this environment.');
-        }
-    }
 
     public function test_it_stores_only_symbols_that_pass_all_weekend_filters(): void
     {
