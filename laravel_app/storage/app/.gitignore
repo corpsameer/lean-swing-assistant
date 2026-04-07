@@ -1,4 +1,5 @@
 *
 !private/
 !public/
+!sample_daily_bars.json
 !.gitignore
