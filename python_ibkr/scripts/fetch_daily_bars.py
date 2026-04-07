@@ -17,7 +17,7 @@ from app.ibkr_client import IBKRClient
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch daily bars from IBKR for one or more symbols.")
     parser.add_argument("symbols", nargs="+", help="Ticker symbols, e.g. AAPL MSFT")
-    parser.add_argument("--lookback-days", type=int, default=30)
+    parser.add_argument("--lookback-days", type=int, default=90)
     parser.add_argument("--output", type=str, default="")
     return parser.parse_args()
 

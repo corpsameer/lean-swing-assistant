@@ -7,19 +7,52 @@
       "status": "ok",
       "bars": [
         {
+          "datetime_utc": "2026-03-31T00:00:00Z",
+          "open": 98.5,
+          "high": 101.2,
+          "low": 97.9,
+          "close": 100.8,
+          "volume": 18765432
+        },
+        {
+          "datetime_utc": "2026-04-01T00:00:00Z",
+          "open": 100.7,
+          "high": 103.4,
+          "low": 100.1,
+          "close": 102.9,
+          "volume": 16543210
+        },
+        {
+          "datetime_utc": "2026-04-02T00:00:00Z",
+          "open": 102.8,
+          "high": 104.1,
+          "low": 101.6,
+          "close": 103.5,
+          "volume": 14321987
+        },
+        {
+          "datetime_utc": "2026-04-03T00:00:00Z",
+          "open": 103.4,
+          "high": 105.0,
+          "low": 102.7,
+          "close": 104.2,
+          "volume": 15234567
+        },
+        {
           "datetime_utc": "2026-04-06T00:00:00Z",
-          "open": 100,
-          "high": 105,
-          "low": 99,
-          "close": 104,
-          "volume": 12345678
+          "open": 104.0,
+          "high": 106.2,
+          "low": 103.3,
+          "close": 105.6,
+          "volume": 17123456
         }
       ]
     },
     {
       "symbol": "MSFT",
       "status": "error",
-      "error": "contract not found"
+      "error": "contract not found",
+      "bars": []
     }
   ]
 }
