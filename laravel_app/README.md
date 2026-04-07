@@ -81,3 +81,14 @@ Path handling notes:
 - accepts absolute paths
 - accepts paths relative to `laravel_app/`
 - accepts `storage`/`storage/app`-relative paths
+
+### Refreshing `sample_daily_bars.json` with real IBKR history
+
+`storage/app/sample_daily_bars.json` is a checked-in example fixture. To store more (real) bars, overwrite it using the Python fetch script output:
+
+```bash
+cd ../python_ibkr
+python scripts/fetch_daily_bars.py AAPL MSFT NVDA --output ../laravel_app/storage/app/sample_daily_bars.json
+```
+
+This preserves the existing ingestion JSON shape while writing a larger per-symbol `bars[]` history into the same file path.
