@@ -57,3 +57,22 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## Market Data JSON Ingestion (T04)
+
+Use the Artisan command below to ingest Python-fetched daily bars JSON from disk:
+
+```bash
+php artisan market:ingest-json storage/app/sample_daily_bars.json --snapshot=daily
+```
+
+Expected top-level payload fields:
+- `mode`
+- `fetched_at_utc`
+- `symbols` (array of symbol objects with at least `symbol` and `status`)
+
+Behavior:
+- creates/reuses `symbols` by ticker symbol
+- stores one `market_snapshots` row per symbol payload (including status `error` payloads)
+- stores `mode`, `fetched_at_utc`, and raw per-symbol data in `payload_json`
+- prints summary counts for processed symbols, success/error statuses, and snapshots stored
