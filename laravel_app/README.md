@@ -92,3 +92,30 @@ python scripts/fetch_daily_bars.py AAPL MSFT NVDA --output ../laravel_app/storag
 ```
 
 This preserves the existing ingestion JSON shape while writing a larger per-symbol `bars[]` history into the same file path.
+
+## Daily Metrics Compute Command (T05)
+
+Compute deterministic daily strategy metrics from the latest ingested `daily` snapshot per symbol:
+
+```bash
+php artisan metrics:compute-daily
+```
+
+Optional filters:
+
+```bash
+php artisan metrics:compute-daily --symbol=AAPL
+php artisan metrics:compute-daily --limit=20
+```
+
+Behavior:
+- creates one minimal `runs` record (`run_type=compute_daily_metrics`)
+- reads latest `market_snapshots` row with `snapshot_type=daily` for each symbol
+- skips symbols with missing/invalid/insufficient bars
+- stores metrics as new `market_snapshots` rows with `snapshot_type=derived_daily_metrics`
+- prints summary counts: scanned, computed, skipped, errors
+
+Trend-state rule (deterministic):
+- `uptrend` if price is above 50-day midpoint and closer to 50-day high than low
+- `downtrend` if price is below 50-day midpoint and closer to 50-day low than high
+- otherwise `neutral`
