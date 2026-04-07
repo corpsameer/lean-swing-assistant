@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+import socket
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -26,6 +27,27 @@ def main() -> int:
         f"port={settings.port}",
         f"client_id={settings.client_id}",
     )
+
+    # quick socket preflight for clearer failures before ib_insync connect flow
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(2)
+    try:
+        sock.connect((settings.host, settings.port))
+    except OSError as exc:
+        print(
+            "IBKR connection test: FAILURE",
+            f"mode={settings.mode}",
+            f"host={settings.host}",
+            f"port={settings.port}",
+            f"client_id={settings.client_id}",
+            f"error=socket_precheck_failed: {exc}",
+        )
+        print(
+            "Hint: enable API in TWS/IB Gateway, confirm API port, and allow localhost 127.0.0.1."
+        )
+        return 2
+    finally:
+        sock.close()
 
     try:
         client.connect()

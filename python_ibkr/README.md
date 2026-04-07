@@ -72,3 +72,13 @@ JSON shape:
 
 - `IBKR_MODE=live` is blocked unless `LIVE_TRADING_ENABLED=true`.
 - `TRADING_MODE` is supported as a fallback for compatibility with T01.
+
+## Troubleshooting connection refused
+
+If `test_connection.py` fails with connection refused:
+
+- Verify the running app and port pairing:
+  - TWS paper: `7497`, TWS live: `7496`
+  - IB Gateway paper: `4002`, IB Gateway live: `4001`
+- In TWS/IB Gateway API settings, enable socket clients and ensure localhost (`127.0.0.1`) is allowed.
+- If both TWS and IB Gateway are running, make sure `.env` points to the one you intend to hit.
