@@ -43,6 +43,8 @@ python scripts/fetch_daily_bars.py AAPL MSFT
 python scripts/fetch_daily_bars.py AAPL --lookback-days 10 --output bars.json
 ```
 
+By default, the fetch uses a 90-day daily-bar window. Any lower `--lookback-days` value is internally floored to a 60-day minimum so downstream metric calculations have enough history.
+
 JSON shape:
 
 ```json

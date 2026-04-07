@@ -25,13 +25,14 @@ class IBKRClient:
         if self.ib.isConnected():
             self.ib.disconnect()
 
-    def fetch_daily_bars(self, symbol: str, lookback_days: int = 30) -> list[dict[str, Any]]:
+    def fetch_daily_bars(self, symbol: str, lookback_days: int = 90) -> list[dict[str, Any]]:
         contract = Stock(symbol=symbol, exchange="SMART", currency="USD")
         self.ib.qualifyContracts(contract)
+        duration_days = max(lookback_days, 60)
         bars = self.ib.reqHistoricalData(
             contract,
             endDateTime="",
-            durationStr=f"{lookback_days} D",
+            durationStr=f"{duration_days} D",
             barSizeSetting="1 day",
             whatToShow="TRADES",
             useRTH=True,
@@ -51,6 +52,7 @@ class IBKRClient:
                     "volume": int(bar.volume),
                 }
             )
+        result.sort(key=lambda bar: bar["datetime_utc"])
         return result
 
 
