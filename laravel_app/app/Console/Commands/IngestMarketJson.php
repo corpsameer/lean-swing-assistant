@@ -10,26 +10,33 @@ use JsonException;
 class IngestMarketJson extends Command
 {
     protected $signature = 'market:ingest-json
-        {path : Path to market data JSON file}
+        {path : JSON file path (absolute, relative, or storage/app-relative)}
         {--snapshot=daily : Snapshot type for stored market snapshots}';
 
     protected $description = 'Ingest Python-fetched market data JSON from disk into symbols and market_snapshots';
 
     public function handle(MarketDataIngestionService $ingestionService): int
     {
-        $path = (string) $this->argument('path');
+        $inputPath = (string) $this->argument('path');
         $snapshotType = (string) $this->option('snapshot');
 
-        if (! is_file($path)) {
-            $this->error("File not found: {$path}");
+        $resolvedPath = $this->resolvePath($inputPath);
+
+        if ($resolvedPath === null) {
+            $this->error("File not found for input path: {$inputPath}");
+            $this->line('Checked:');
+            $this->line('- '.$inputPath);
+            $this->line('- '.base_path($inputPath));
+            $this->line('- '.storage_path($inputPath));
+            $this->line('- '.storage_path('app/'.$inputPath));
 
             return self::FAILURE;
         }
 
         try {
-            $raw = file_get_contents($path);
+            $raw = file_get_contents($resolvedPath);
             if ($raw === false) {
-                throw new InvalidArgumentException("Unable to read file: {$path}");
+                throw new InvalidArgumentException("Unable to read file: {$resolvedPath}");
             }
 
             $payload = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
@@ -50,11 +57,30 @@ class IngestMarketJson extends Command
         }
 
         $this->info('Ingestion completed.');
+        $this->line('file: '.$resolvedPath);
         $this->line('total symbols processed: '.$summary['total_symbols_processed']);
         $this->line('success count: '.$summary['success_count']);
         $this->line('error count: '.$summary['error_count']);
         $this->line('snapshots stored: '.$summary['snapshots_stored']);
 
         return self::SUCCESS;
+    }
+
+    private function resolvePath(string $inputPath): ?string
+    {
+        $candidates = [
+            $inputPath,
+            base_path($inputPath),
+            storage_path($inputPath),
+            storage_path('app/'.$inputPath),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 }

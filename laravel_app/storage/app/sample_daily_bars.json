@@ -1,0 +1,25 @@
+{
+  "mode": "paper",
+  "fetched_at_utc": "2026-04-07T12:34:56Z",
+  "symbols": [
+    {
+      "symbol": "AAPL",
+      "status": "ok",
+      "bars": [
+        {
+          "datetime_utc": "2026-04-06T00:00:00Z",
+          "open": 100,
+          "high": 105,
+          "low": 99,
+          "close": 104,
+          "volume": 12345678
+        }
+      ]
+    },
+    {
+      "symbol": "MSFT",
+      "status": "error",
+      "error": "contract not found"
+    }
+  ]
+}

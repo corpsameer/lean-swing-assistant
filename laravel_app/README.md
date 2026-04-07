@@ -60,7 +60,7 @@ The Laravel framework is open-sourced software licensed under the [MIT license](
 
 ## Market Data JSON Ingestion (T04)
 
-Use the Artisan command below to ingest Python-fetched daily bars JSON from disk:
+Use the Artisan command below to ingest Python-fetched daily bars JSON from disk (a sample file is included at `storage/app/sample_daily_bars.json`):
 
 ```bash
 php artisan market:ingest-json storage/app/sample_daily_bars.json --snapshot=daily
@@ -76,3 +76,8 @@ Behavior:
 - stores one `market_snapshots` row per symbol payload (including status `error` payloads)
 - stores `mode`, `fetched_at_utc`, and raw per-symbol data in `payload_json`
 - prints summary counts for processed symbols, success/error statuses, and snapshots stored
+
+Path handling notes:
+- accepts absolute paths
+- accepts paths relative to `laravel_app/`
+- accepts `storage`/`storage/app`-relative paths
