@@ -32,28 +32,82 @@ Execution is skipped unless both are true:
 
 Any non-paper broker mode remains blocked.
 
-## Test path
+## Exact test steps (Laravel command + dummy DB data)
 
-### Test A — Disabled mode
+> Command used below inserts dummy data (`symbols`, `runs`, `watchlist_candidates`, `trade_setups`) and then runs the execution service for the requested scenario.
 
-1. Set `EXECUTION_ENABLED=false`.
-2. Run intraday validation flow that creates `trade_setup`.
-3. Confirm no `orders` row is created.
-4. Confirm logs show `paper execution skipped`.
+### 0) Prep
 
-### Test B — Dry-run mode
+```bash
+cd laravel_app
+php artisan migrate
+```
 
-1. Set `EXECUTION_ENABLED=true` and `EXECUTION_DRY_RUN=true`.
-2. Run intraday validation flow.
-3. Confirm `orders.status=simulated_dry_run`.
-4. Confirm no broker order id is stored.
-5. Confirm `orders.meta_json` contains full parent/take-profit/stop-loss structure.
+### 1) Test A — Disabled mode (no order, no broker call)
 
-### Test C — Actual paper mode
+#### Breakout
+```bash
+php artisan trade:execution-scenario-test disabled breakout --symbol=T11ABRK --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
+```
+Expected:
+- Output: `No order row created (expected for disabled scenario).`
+- DB check:
+```bash
+php artisan tinker --execute="echo \App\Models\Order::whereHas('tradeSetup', fn($q)=>$q->where('notes','like','%T11.1 scenario test%'))->count();"
+```
 
-1. Start IBKR TWS paper and API access.
-2. Set `EXECUTION_ENABLED=true` and `EXECUTION_DRY_RUN=false`.
-3. Run intraday validation flow.
-4. Confirm `orders.status=submitted_paper`.
-5. Confirm parent broker id exists and child ids are present in `orders.meta_json.broker_order_ids`.
+#### Pullback
+```bash
+php artisan trade:execution-scenario-test disabled pullback --symbol=T11APBK --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
+```
+Expected: same as breakout disabled test.
+
+### 2) Test B — Dry-run mode (simulated record, no transmit)
+
+#### Breakout
+```bash
+php artisan trade:execution-scenario-test dry-run breakout --symbol=T11BBRK --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
+```
+Expected:
+- `status=simulated_dry_run`
+- `broker_order_id=null`
+- `order_type=STP LMT`
+- `meta_json.orders.parent.stop_price` exists
+- `meta_json.orders.parent.limit_price = entry + BREAKOUT_STOP_LIMIT_BUFFER`
+
+#### Pullback
+```bash
+php artisan trade:execution-scenario-test dry-run pullback --symbol=T11BPBK --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
+```
+Expected:
+- `status=simulated_dry_run`
+- `broker_order_id=null`
+- `order_type=LMT`
+- `meta_json.orders.parent.stop_price` absent for parent
+
+### 3) Test C — Actual paper mode (IBKR paper transmit)
+
+1. Start IBKR TWS paper + API access.
+2. Ensure Python connector env points to paper endpoint.
+3. Run one setup type at a time.
+
+#### Breakout (paper transmit)
+```bash
+php artisan trade:execution-scenario-test paper breakout --force-paper --symbol=T11CBRK --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
+```
+
+#### Pullback (paper transmit)
+```bash
+php artisan trade:execution-scenario-test paper pullback --force-paper --symbol=T11CPBK --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
+```
+
+Expected (both):
+- `status=submitted_paper`
+- `broker_order_id` present (parent)
+- `meta_json.broker_order_ids.take_profit` and `meta_json.broker_order_ids.stop_loss` present
+
+## Notes
+
+- `paper` scenario is blocked unless `--force-paper` is explicitly provided.
+- No live support, no trailing logic, no dynamic TP/SL updates, no partial exits.
 
