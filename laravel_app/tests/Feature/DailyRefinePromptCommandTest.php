@@ -41,8 +41,8 @@ class DailyRefinePromptCommandTest extends TestCase
             'completed_at' => now('UTC')->subMinutes(30),
         ]);
 
-        $aapl = Symbol::create(['symbol' => 'AAPL', 'is_active' => true]);
-        $msft = Symbol::create(['symbol' => 'MSFT', 'is_active' => true]);
+        $aapl = Symbol::firstOrCreate(['symbol' => 'AAPL'], ['is_active' => true]);
+        $msft = Symbol::firstOrCreate(['symbol' => 'MSFT'], ['is_active' => true]);
 
         MarketSnapshot::create([
             'run_id' => $sourceRun->id,
