@@ -12,7 +12,10 @@ use Throwable;
 
 class PaperTradeExecutionService
 {
-    public function executeForSetup(TradeSetup $tradeSetup, string $symbol): void
+    /**
+     * @return array{status:string,message:string,order_id:int|null}
+     */
+    public function executeForSetup(TradeSetup $tradeSetup, string $symbol): array
     {
         $isExecutionEnabled = (bool) config('services.trade_execution.enabled', false);
         $brokerMode = strtolower((string) config('services.trade_execution.broker_trading_mode', 'paper'));
@@ -25,7 +28,11 @@ class PaperTradeExecutionService
                 'symbol' => $symbol,
             ]);
 
-            return;
+            return [
+                'status' => 'skipped',
+                'message' => 'paper execution is disabled by configuration',
+                'order_id' => null,
+            ];
         }
 
         $tradeSetup->loadMissing('sourceCandidate');
@@ -80,9 +87,32 @@ class PaperTradeExecutionService
             }
 
             $parentBrokerStatus = strtolower((string) ($response['broker_statuses']['parent'] ?? ''));
+            $statusByBrokerState = [
+                'cancelled' => 'cancelled_paper',
+                'inactive' => 'rejected_paper',
+                'rejected' => 'rejected_paper',
+                'apicancelled' => 'cancelled_paper',
+                'pendingsubmit' => 'submitted_paper',
+                'presubmitted' => 'submitted_paper',
+                'submitted' => 'submitted_paper',
+                'filled' => 'filled_paper',
+                'partiallyfilled' => 'partially_filled_paper',
+            ];
             $storedStatus = $dryRun
                 ? 'simulated_dry_run'
-                : ($parentBrokerStatus === 'cancelled' ? 'cancelled_paper' : 'submitted_paper');
+                : ($statusByBrokerState[$parentBrokerStatus] ?? 'submitted_paper');
+
+            $executionNote = 'paper bracket transmitted to broker';
+            if ($dryRun) {
+                $executionNote = 'dry-run only: no broker transmission';
+            } elseif ($storedStatus === 'rejected_paper') {
+                $lastBrokerMessage = (string) ($response['broker_diagnostics']['parent']['last_message'] ?? '');
+                $executionNote = $lastBrokerMessage !== ''
+                    ? 'paper bracket rejected by broker: '.$lastBrokerMessage
+                    : 'paper bracket rejected by broker';
+            } elseif ($storedStatus === 'cancelled_paper') {
+                $executionNote = 'paper bracket cancelled by broker';
+            }
 
             $orderPayload = [
                 'trade_setup_id' => $tradeSetup->id,
@@ -96,9 +126,7 @@ class PaperTradeExecutionService
                 'placed_at' => now('UTC'),
                 'meta_json' => [
                     ...$response,
-                    'execution_note' => $dryRun
-                        ? 'dry-run only: no broker transmission'
-                        : 'paper bracket transmitted to broker',
+                    'execution_note' => $executionNote,
                 ],
             ];
 
@@ -106,7 +134,7 @@ class PaperTradeExecutionService
                 $orderPayload['symbol_id'] = $tradeSetup->symbol_id;
             }
 
-            Order::create($orderPayload);
+            $order = Order::create($orderPayload);
 
             Log::info('paper execution completed', [
                 'symbol' => strtoupper(trim($symbol)),
@@ -115,12 +143,24 @@ class PaperTradeExecutionService
                 'status' => $orderPayload['status'],
                 'parent_broker_order_id' => $brokerOrderId,
             ]);
+
+            return [
+                'status' => 'success',
+                'message' => 'paper execution completed',
+                'order_id' => $order->id,
+            ];
         } catch (Throwable $throwable) {
             Log::error('order placement error', [
                 'symbol' => strtoupper(trim($symbol)),
                 'trade_setup_id' => $tradeSetup->id,
                 'message' => $throwable->getMessage(),
             ]);
+
+            return [
+                'status' => 'error',
+                'message' => $throwable->getMessage(),
+                'order_id' => null,
+            ];
         }
     }
 
