@@ -139,3 +139,30 @@ Behavior:
 
 Model note:
 - the command does not force `temperature`, which avoids 400 errors on models that only support default temperature behavior (e.g., `OPENAI_MODEL=gpt-5`)
+
+## Intraday Prompt C Validate Command (T09)
+
+Validate active daily-refined candidates for intraday entry readiness with one batch OpenAI call:
+
+```bash
+php artisan prompt:intraday-validate
+```
+
+Behavior:
+- creates one `runs` row with `run_type=intraday_validate`
+- loads latest `watchlist_candidates` where `status` is `keep` or `wait`
+- loads latest `derived_daily_metrics` and `intraday` snapshot payloads per symbol
+- applies deterministic eligibility checks before model call:
+  - requires trigger bands
+  - requires current price within band or near band
+  - skips already-extended symbols via config thresholds
+  - skips symbols that already have `planned`/`open` setups
+- sends one structured Prompt C payload for eligible symbols only
+- stores request/response in `prompt_logs` (`prompt_type=C`, batch row with nullable `symbol_id`)
+- creates `trade_setups` (`status=planned`) only for `decision=enter_now` and no active duplicate setup
+- updates candidate `reasoning_text` and `prompt_output_json` from model output
+- prints concise summary counts: active scanned, sent, enter_now, wait, reject, trade setups created, errors
+
+Config knobs (optional):
+- `INTRADAY_NEAR_BAND_TOLERANCE_PERCENT` (default: `0.75`)
+- `INTRADAY_MAX_EXTENSION_PERCENT` (default: `1.5`)
