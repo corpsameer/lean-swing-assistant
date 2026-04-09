@@ -15,7 +15,10 @@ use Throwable;
 
 class PromptCIntradayValidationService
 {
-    public function __construct(private readonly OpenAiService $openAiService) {}
+    public function __construct(
+        private readonly OpenAiService $openAiService,
+        private readonly PaperTradeExecutionService $paperTradeExecutionService,
+    ) {}
 
     /**
      * @return array{run_id:int,active_candidates_scanned:int,candidates_sent_to_model:int,enter_now_count:int,wait_count:int,reject_count:int,trade_setups_created:int,errors:int}
@@ -137,7 +140,7 @@ class PromptCIntradayValidationService
                             ->exists();
 
                         if (! $duplicateExists) {
-                            TradeSetup::create([
+                            $tradeSetup = TradeSetup::create([
                                 'symbol_id' => $candidate->symbol_id,
                                 'source_candidate_id' => $candidate->id,
                                 'status' => 'planned',
@@ -149,6 +152,10 @@ class PromptCIntradayValidationService
                             ]);
 
                             $summary['trade_setups_created']++;
+
+                            DB::afterCommit(function () use ($tradeSetup, $symbol): void {
+                                $this->paperTradeExecutionService->executeBuyLimitForSetup($tradeSetup, $symbol);
+                            });
                         }
                     }
 
