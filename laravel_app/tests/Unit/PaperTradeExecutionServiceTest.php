@@ -52,6 +52,27 @@ class PaperTradeExecutionServiceTest extends TestCase
         $this->assertTrue((bool) $order->meta_json['dry_run']);
     }
 
+    public function test_paper_mode_marks_inactive_parent_as_rejected(): void
+    {
+        config()->set('services.trade_execution.enabled', true);
+        config()->set('services.trade_execution.broker_trading_mode', 'paper');
+        config()->set('services.trade_execution.dry_run', false);
+        config()->set('services.trade_execution.paper_order_quantity', 1);
+        config()->set('services.trade_execution.python_executable', 'php');
+        config()->set('services.trade_execution.script_path', base_path('tests/Fixtures/fake_place_order_rejected.php'));
+
+        $tradeSetup = $this->createTradeSetup('breakout');
+
+        app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
+
+        /** @var Order $order */
+        $order = Order::query()->firstOrFail();
+
+        $this->assertSame('rejected_paper', $order->status);
+        $this->assertStringContainsString('paper bracket rejected by broker', (string) $order->meta_json['execution_note']);
+        $this->assertStringContainsString('CASH AVAILABLE: 0.00', (string) $order->meta_json['execution_note']);
+    }
+
     public function test_paper_mode_stores_broker_parent_order_id(): void
     {
         config()->set('services.trade_execution.enabled', true);

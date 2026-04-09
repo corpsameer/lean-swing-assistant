@@ -112,14 +112,24 @@ class TestExecutionScenarioCommand extends Command
         $this->info('Created dummy trade setup: '.$tradeSetup->id);
         $this->line(sprintf('Scenario=%s SetupType=%s Symbol=%s', $scenario, $setupType, $symbolText));
 
-        $executionService->executeForSetup($tradeSetup, $symbolText);
+        $executionResult = $executionService->executeForSetup($tradeSetup, $symbolText);
 
         $order = Order::query()->where('trade_setup_id', $tradeSetup->id)->latest('id')->first();
 
         if ($order === null) {
-            $this->warn('No order row created (expected for disabled scenario).');
+            if ($scenario === 'disabled' || ($executionResult['status'] ?? '') === 'skipped') {
+                $this->warn('No order row created (expected for disabled scenario).');
 
-            return self::SUCCESS;
+                return self::SUCCESS;
+            }
+
+            $this->error('No order row created for an enabled scenario.');
+            $this->line('Execution status: '.($executionResult['status'] ?? 'unknown'));
+            $this->line('Execution message: '.($executionResult['message'] ?? 'n/a'));
+            $this->newLine();
+            $this->warn('Tip: verify EXECUTION_SCRIPT_PATH and run `php artisan config:clear` after editing .env.');
+
+            return self::FAILURE;
         }
 
         $payload = [
