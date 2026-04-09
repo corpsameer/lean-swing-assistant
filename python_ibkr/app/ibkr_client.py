@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Any
 
-from ib_insync import IB, Stock
+from ib_insync import IB, LimitOrder, Stock
 
 from app.config import IBKRSettings
 
@@ -113,6 +113,23 @@ class IBKRClient:
             "intraday_vwap": intraday_vwap,
             "bars": normalized_bars,
         }
+
+    def place_limit_buy_order(self, symbol: str, quantity: float, limit_price: float) -> int:
+        if self.settings.mode != "paper":
+            raise ValueError("Only paper trading is supported for order placement.")
+
+        contract = Stock(symbol=symbol, exchange="SMART", currency="USD")
+        self.ib.qualifyContracts(contract)
+
+        order = LimitOrder(action="BUY", totalQuantity=float(quantity), lmtPrice=float(limit_price))
+        trade = self.ib.placeOrder(contract, order)
+        self.ib.sleep(1.0)
+
+        order_id = trade.order.orderId if trade.order and trade.order.orderId else order.orderId
+        if not order_id:
+            raise RuntimeError("IBKR did not return an order id.")
+
+        return int(order_id)
 
 
 def _normalize_to_utc(value: Any) -> str:

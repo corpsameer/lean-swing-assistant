@@ -55,4 +55,13 @@ return [
         'timeout_seconds' => env('INTRADAY_FETCH_TIMEOUT_SECONDS', 180),
     ],
 
+    'trade_execution' => [
+        'enabled' => env('EXECUTION_ENABLED', false),
+        'broker_trading_mode' => env('BROKER_TRADING_MODE', 'paper'),
+        'default_quantity' => env('EXECUTION_DEFAULT_QUANTITY', 1),
+        'python_executable' => env('EXECUTION_PYTHON_EXECUTABLE', env('PYTHON_EXECUTABLE', 'python')),
+        'script_path' => env('EXECUTION_SCRIPT_PATH', base_path('../python_ibkr/scripts/place_order.py')),
+        'timeout_seconds' => env('EXECUTION_TIMEOUT_SECONDS', 30),
+    ],
+
 ];
