@@ -12,7 +12,10 @@ use Throwable;
 
 class PaperTradeExecutionService
 {
-    public function executeForSetup(TradeSetup $tradeSetup, string $symbol): void
+    /**
+     * @return array{status:string,message:string,order_id:int|null}
+     */
+    public function executeForSetup(TradeSetup $tradeSetup, string $symbol): array
     {
         $isExecutionEnabled = (bool) config('services.trade_execution.enabled', false);
         $brokerMode = strtolower((string) config('services.trade_execution.broker_trading_mode', 'paper'));
@@ -25,7 +28,11 @@ class PaperTradeExecutionService
                 'symbol' => $symbol,
             ]);
 
-            return;
+            return [
+                'status' => 'skipped',
+                'message' => 'paper execution is disabled by configuration',
+                'order_id' => null,
+            ];
         }
 
         $tradeSetup->loadMissing('sourceCandidate');
@@ -127,7 +134,7 @@ class PaperTradeExecutionService
                 $orderPayload['symbol_id'] = $tradeSetup->symbol_id;
             }
 
-            Order::create($orderPayload);
+            $order = Order::create($orderPayload);
 
             Log::info('paper execution completed', [
                 'symbol' => strtoupper(trim($symbol)),
@@ -136,12 +143,24 @@ class PaperTradeExecutionService
                 'status' => $orderPayload['status'],
                 'parent_broker_order_id' => $brokerOrderId,
             ]);
+
+            return [
+                'status' => 'success',
+                'message' => 'paper execution completed',
+                'order_id' => $order->id,
+            ];
         } catch (Throwable $throwable) {
             Log::error('order placement error', [
                 'symbol' => strtoupper(trim($symbol)),
                 'trade_setup_id' => $tradeSetup->id,
                 'message' => $throwable->getMessage(),
             ]);
+
+            return [
+                'status' => 'error',
+                'message' => $throwable->getMessage(),
+                'order_id' => null,
+            ];
         }
     }
 
