@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\TradeSetup;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -17,6 +18,13 @@ class PaperTradeExecutionService
         $brokerMode = strtolower((string) config('services.trade_execution.broker_trading_mode', 'paper'));
 
         if (! $isExecutionEnabled || $brokerMode !== 'paper') {
+            Log::info('paper execution skipped', [
+                'execution_enabled' => $isExecutionEnabled,
+                'broker_trading_mode' => $brokerMode,
+                'trade_setup_id' => $tradeSetup->id,
+                'symbol' => $symbol,
+            ]);
+
             return;
         }
 
@@ -44,9 +52,8 @@ class PaperTradeExecutionService
                 throw new RuntimeException('Order placement succeeded but broker order_id is missing.');
             }
 
-            Order::create([
+            $orderPayload = [
                 'trade_setup_id' => $tradeSetup->id,
-                'symbol_id' => $tradeSetup->symbol_id,
                 'broker_order_id' => $brokerOrderId,
                 'order_type' => 'LMT',
                 'side' => 'BUY',
@@ -55,7 +62,18 @@ class PaperTradeExecutionService
                 'status' => 'pending',
                 'placed_at' => now('UTC'),
                 'meta_json' => $response,
-            ]);
+            ];
+
+            if (Schema::hasColumn('orders', 'symbol_id')) {
+                $orderPayload['symbol_id'] = $tradeSetup->symbol_id;
+            } else {
+                Log::warning('orders.symbol_id column is missing; run migrations to persist symbol_id', [
+                    'trade_setup_id' => $tradeSetup->id,
+                    'symbol' => $symbol,
+                ]);
+            }
+
+            Order::create($orderPayload);
 
             Log::info('order placed successfully', [
                 'symbol' => $symbol,
