@@ -256,4 +256,89 @@ class IntradayValidatePromptCommandTest extends TestCase
         $this->assertSame('Near-band but not yet confirming continuation.', $msftCandidate->reasoning_text);
         $this->assertNull($nvdaCandidate->reasoning_text);
     }
+
+    public function test_it_uses_latest_keep_or_wait_candidate_per_symbol_for_intraday_filtering(): void
+    {
+        config()->set('services.intraday_validation.near_band_tolerance_percent', 0.75);
+        config()->set('services.intraday_validation.max_extension_percent', 1.5);
+
+        $dailyMetricsRun = Run::create([
+            'run_type' => 'compute_daily_metrics',
+            'status' => 'completed',
+            'started_at' => now('UTC')->subHours(2),
+            'completed_at' => now('UTC')->subHours(2),
+        ]);
+
+        $olderRefineRun = Run::create([
+            'run_type' => 'daily_refine',
+            'status' => 'completed',
+            'started_at' => now('UTC')->subHour(),
+            'completed_at' => now('UTC')->subHour(),
+        ]);
+
+        $latestRefineRun = Run::create([
+            'run_type' => 'daily_refine',
+            'status' => 'completed',
+            'started_at' => now('UTC')->subMinutes(15),
+            'completed_at' => now('UTC')->subMinutes(15),
+        ]);
+
+        $aapl = Symbol::firstOrCreate(['symbol' => 'AAPL'], ['is_active' => true]);
+
+        MarketSnapshot::create([
+            'run_id' => $dailyMetricsRun->id,
+            'symbol_id' => $aapl->id,
+            'snapshot_type' => 'derived_daily_metrics',
+            'payload_json' => [
+                'metrics' => [
+                    'extension_percent' => 0.5,
+                ],
+            ],
+            'created_at' => now('UTC')->subMinutes(10),
+        ]);
+
+        MarketSnapshot::create([
+            'run_id' => $dailyMetricsRun->id,
+            'symbol_id' => $aapl->id,
+            'snapshot_type' => 'intraday',
+            'payload_json' => [
+                'metrics' => [
+                    'current_price' => 100.0,
+                ],
+            ],
+            'created_at' => now('UTC')->subMinutes(5),
+        ]);
+
+        WatchlistCandidate::create([
+            'run_id' => $olderRefineRun->id,
+            'symbol_id' => $aapl->id,
+            'stage' => 'weekend',
+            'status' => 'keep',
+            'setup_type' => 'breakout',
+            'trigger_band_low' => 99.5,
+            'trigger_band_high' => 100.5,
+            'created_at' => now('UTC')->subMinutes(50),
+        ]);
+
+        WatchlistCandidate::create([
+            'run_id' => $latestRefineRun->id,
+            'symbol_id' => $aapl->id,
+            'stage' => 'weekend',
+            'status' => 'wait',
+            'setup_type' => 'pullback',
+            'trigger_band_low' => 110.0,
+            'trigger_band_high' => 111.0,
+            'created_at' => now('UTC')->subMinutes(12),
+        ]);
+
+        Http::fake();
+
+        $this->artisan('prompt:intraday-validate')
+            ->expectsOutputToContain('active candidates scanned: 1')
+            ->expectsOutputToContain('candidates sent to model: 0')
+            ->expectsOutputToContain('AAPL skipped: price not near trigger band')
+            ->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
 }

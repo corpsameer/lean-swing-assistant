@@ -42,6 +42,7 @@ class PromptCIntradayValidationService
         try {
             $candidates = $this->latestActiveCandidates();
             $summary['active_candidates_scanned'] = $candidates->count();
+            $summary['skipped_candidates'] = [];
 
             if ($candidates->isEmpty()) {
                 $this->completeRun($run, $summary);
@@ -53,7 +54,8 @@ class PromptCIntradayValidationService
             $metricsBySymbolId = $this->latestMetricsBySymbolId($symbolIds, 'derived_daily_metrics');
             $intradayBySymbolId = $this->latestMetricsBySymbolId($symbolIds, 'intraday');
 
-            [$eligibleRows, $candidateBySymbol] = $this->buildEligiblePayloadRows($candidates, $metricsBySymbolId, $intradayBySymbolId);
+            [$eligibleRows, $candidateBySymbol, $skippedCandidates] = $this->buildEligiblePayloadRows($candidates, $metricsBySymbolId, $intradayBySymbolId);
+            $summary['skipped_candidates'] = $skippedCandidates;
 
             $summary['candidates_sent_to_model'] = count($eligibleRows);
 
@@ -187,24 +189,24 @@ class PromptCIntradayValidationService
     }
 
     /**
+     * Latest is determined by the highest watchlist_candidates.id per symbol_id.
+     *
      * @return Collection<int, WatchlistCandidate>
      */
     private function latestActiveCandidates(): Collection
     {
-        $latestDailyRefineRunId = WatchlistCandidate::query()
+        $latestIdsBySymbol = WatchlistCandidate::query()
+            ->selectRaw('MAX(id) AS id')
             ->where('stage', 'weekend')
             ->whereIn('status', ['keep', 'wait'])
-            ->max('run_id');
-
-        if ($latestDailyRefineRunId === null) {
-            return collect();
-        }
+            ->groupBy('symbol_id');
 
         return WatchlistCandidate::query()
+            ->joinSub($latestIdsBySymbol, 'latest', function ($join): void {
+                $join->on('watchlist_candidates.id', '=', 'latest.id');
+            })
             ->with('symbol:id,symbol')
-            ->where('run_id', $latestDailyRefineRunId)
-            ->where('stage', 'weekend')
-            ->whereIn('status', ['keep', 'wait'])
+            ->select('watchlist_candidates.*')
             ->orderBy('symbol_id')
             ->get();
     }
@@ -213,7 +215,7 @@ class PromptCIntradayValidationService
      * @param  Collection<int, WatchlistCandidate>  $candidates
      * @param  array<int, array<string, mixed>>  $metricsBySymbolId
      * @param  array<int, array<string, mixed>>  $intradayBySymbolId
-     * @return array{0:array<int,array<string,mixed>>,1:Collection<string,WatchlistCandidate>}
+     * @return array{0:array<int,array<string,mixed>>,1:Collection<string,WatchlistCandidate>,2:array<int,string>}
      */
     private function buildEligiblePayloadRows(Collection $candidates, array $metricsBySymbolId, array $intradayBySymbolId): array
     {
@@ -222,12 +224,16 @@ class PromptCIntradayValidationService
 
         $eligibleRows = [];
         $candidateBySymbol = collect();
+        $skippedCandidates = [];
 
         foreach ($candidates as $candidate) {
+            $symbol = (string) $candidate->symbol->symbol;
+
             $triggerBandLow = $this->toFloat($candidate->trigger_band_low);
             $triggerBandHigh = $this->toFloat($candidate->trigger_band_high);
 
             if ($triggerBandLow === null || $triggerBandHigh === null || $triggerBandLow > $triggerBandHigh) {
+                $skippedCandidates[] = sprintf('%s skipped: missing trigger band', $symbol);
                 continue;
             }
 
@@ -236,22 +242,23 @@ class PromptCIntradayValidationService
 
             $currentPrice = $this->toFloat($this->extractInputValue($intraday, ['current_price', 'last_price', 'close']));
             if ($currentPrice === null || $currentPrice <= 0) {
+                $skippedCandidates[] = sprintf('%s skipped: missing intraday price', $symbol);
                 continue;
             }
 
             $isInBand = $currentPrice >= $triggerBandLow && $currentPrice <= $triggerBandHigh;
             $isNearBand = $this->isNearBand($currentPrice, $triggerBandLow, $triggerBandHigh, $nearBandTolerancePercent / 100);
             if (! $isInBand && ! $isNearBand) {
+                $skippedCandidates[] = sprintf('%s skipped: price not near trigger band', $symbol);
                 continue;
             }
 
             $extensionPercent = $this->toFloat($this->extractInputValue($intraday, ['extension_percent']))
                 ?? $this->toFloat(Arr::get($dailyMetrics, 'extension_percent'));
             if ($currentPrice > ($triggerBandHigh * (1 + ($maxExtensionPercent / 100))) || (($extensionPercent ?? 0.0) > ($maxExtensionPercent * 2))) {
+                $skippedCandidates[] = sprintf('%s skipped: already extended', $symbol);
                 continue;
             }
-
-            $symbol = (string) $candidate->symbol->symbol;
 
             $eligibleRows[] = [
                 'symbol' => $symbol,
@@ -276,7 +283,7 @@ class PromptCIntradayValidationService
             $candidateBySymbol->put(strtoupper($symbol), $candidate);
         }
 
-        return [$eligibleRows, $candidateBySymbol];
+        return [$eligibleRows, $candidateBySymbol, $skippedCandidates];
     }
 
     /**
