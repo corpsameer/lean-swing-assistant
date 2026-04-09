@@ -29,6 +29,7 @@ class MarketDataIngestionService
             'meta_json' => [
                 'mode' => $payload['mode'],
                 'fetched_at_utc' => $fetchedAtUtc->toIso8601String(),
+                'snapshot_type' => $snapshotType,
             ],
         ]);
 

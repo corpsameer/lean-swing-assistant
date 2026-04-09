@@ -368,19 +368,52 @@ class PromptCIntradayValidationService
             ->whereIn('symbol_id', $symbolIds)
             ->groupBy('symbol_id');
 
-        return MarketSnapshot::query()
+        $snapshots = MarketSnapshot::query()
             ->joinSub($latestBySymbol, 'latest', function ($join): void {
                 $join->on('market_snapshots.id', '=', 'latest.id');
             })
             ->select('market_snapshots.symbol_id', 'market_snapshots.payload_json')
             ->get()
-            ->mapWithKeys(function (MarketSnapshot $snapshot): array {
-                $metrics = Arr::get($snapshot->payload_json, 'metrics');
-                $payload = is_array($metrics) ? $metrics : (is_array($snapshot->payload_json) ? $snapshot->payload_json : []);
-
-                return [$snapshot->symbol_id => $payload];
-            })
             ->all();
+
+        $bySymbol = [];
+        foreach ($snapshots as $snapshot) {
+            if (! $snapshot instanceof MarketSnapshot) {
+                continue;
+            }
+
+            $bySymbol[$snapshot->symbol_id] = $this->normalizeSnapshotPayload($snapshot->payload_json);
+        }
+
+        return $bySymbol;
+    }
+
+    /**
+     * @param  array<string,mixed>|mixed  $payloadJson
+     * @return array<string,mixed>
+     */
+    private function normalizeSnapshotPayload(mixed $payloadJson): array
+    {
+        if (! is_array($payloadJson)) {
+            return [];
+        }
+
+        $topLevelMetrics = Arr::get($payloadJson, 'metrics');
+        if (is_array($topLevelMetrics)) {
+            return $topLevelMetrics;
+        }
+
+        $symbolData = Arr::get($payloadJson, 'symbol_data');
+        if (is_array($symbolData)) {
+            $symbolMetrics = Arr::get($symbolData, 'metrics');
+            if (is_array($symbolMetrics)) {
+                return $symbolMetrics;
+            }
+
+            return $symbolData;
+        }
+
+        return $payloadJson;
     }
 
     /**
