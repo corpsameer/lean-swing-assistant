@@ -80,9 +80,32 @@ class PaperTradeExecutionService
             }
 
             $parentBrokerStatus = strtolower((string) ($response['broker_statuses']['parent'] ?? ''));
+            $statusByBrokerState = [
+                'cancelled' => 'cancelled_paper',
+                'inactive' => 'rejected_paper',
+                'rejected' => 'rejected_paper',
+                'apicancelled' => 'cancelled_paper',
+                'pendingsubmit' => 'submitted_paper',
+                'presubmitted' => 'submitted_paper',
+                'submitted' => 'submitted_paper',
+                'filled' => 'filled_paper',
+                'partiallyfilled' => 'partially_filled_paper',
+            ];
             $storedStatus = $dryRun
                 ? 'simulated_dry_run'
-                : ($parentBrokerStatus === 'cancelled' ? 'cancelled_paper' : 'submitted_paper');
+                : ($statusByBrokerState[$parentBrokerStatus] ?? 'submitted_paper');
+
+            $executionNote = 'paper bracket transmitted to broker';
+            if ($dryRun) {
+                $executionNote = 'dry-run only: no broker transmission';
+            } elseif ($storedStatus === 'rejected_paper') {
+                $lastBrokerMessage = (string) ($response['broker_diagnostics']['parent']['last_message'] ?? '');
+                $executionNote = $lastBrokerMessage !== ''
+                    ? 'paper bracket rejected by broker: '.$lastBrokerMessage
+                    : 'paper bracket rejected by broker';
+            } elseif ($storedStatus === 'cancelled_paper') {
+                $executionNote = 'paper bracket cancelled by broker';
+            }
 
             $orderPayload = [
                 'trade_setup_id' => $tradeSetup->id,
@@ -96,9 +119,7 @@ class PaperTradeExecutionService
                 'placed_at' => now('UTC'),
                 'meta_json' => [
                     ...$response,
-                    'execution_note' => $dryRun
-                        ? 'dry-run only: no broker transmission'
-                        : 'paper bracket transmitted to broker',
+                    'execution_note' => $executionNote,
                 ],
             ];
 
