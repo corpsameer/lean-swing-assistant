@@ -91,7 +91,7 @@ class IntradayValidatePromptCommandTest extends TestCase
             'snapshot_type' => 'intraday',
             'payload_json' => [
                 'metrics' => [
-                    'current_price' => 418.0,
+                    'current_price' => 413.8,
                     'session_high' => 419.2,
                     'session_low' => 410.5,
                     'intraday_vwap' => 416.8,

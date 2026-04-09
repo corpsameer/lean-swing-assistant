@@ -22,7 +22,7 @@ class MarketDataIngestionService
         $fetchedAtUtc = CarbonImmutable::parse($payload['fetched_at_utc'])->utc();
 
         $run = Run::create([
-            'run_type' => 'ingest_market_json',
+            'run_type' => 'ingest_daily_bars',
             'status' => 'completed',
             'started_at' => now('UTC'),
             'completed_at' => now('UTC'),

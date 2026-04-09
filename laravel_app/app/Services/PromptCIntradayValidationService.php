@@ -368,18 +368,24 @@ class PromptCIntradayValidationService
             ->whereIn('symbol_id', $symbolIds)
             ->groupBy('symbol_id');
 
-        return MarketSnapshot::query()
+        $snapshots = MarketSnapshot::query()
             ->joinSub($latestBySymbol, 'latest', function ($join): void {
                 $join->on('market_snapshots.id', '=', 'latest.id');
             })
             ->select('market_snapshots.symbol_id', 'market_snapshots.payload_json')
             ->get()
-            ->mapWithKeys(function (MarketSnapshot $snapshot): array {
-                $payload = $this->normalizeSnapshotPayload($snapshot->payload_json);
-
-                return [$snapshot->symbol_id => $payload];
-            })
             ->all();
+
+        $bySymbol = [];
+        foreach ($snapshots as $snapshot) {
+            if (! $snapshot instanceof MarketSnapshot) {
+                continue;
+            }
+
+            $bySymbol[$snapshot->symbol_id] = $this->normalizeSnapshotPayload($snapshot->payload_json);
+        }
+
+        return $bySymbol;
     }
 
     /**
