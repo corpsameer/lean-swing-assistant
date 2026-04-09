@@ -375,12 +375,39 @@ class PromptCIntradayValidationService
             ->select('market_snapshots.symbol_id', 'market_snapshots.payload_json')
             ->get()
             ->mapWithKeys(function (MarketSnapshot $snapshot): array {
-                $metrics = Arr::get($snapshot->payload_json, 'metrics');
-                $payload = is_array($metrics) ? $metrics : (is_array($snapshot->payload_json) ? $snapshot->payload_json : []);
+                $payload = $this->normalizeSnapshotPayload($snapshot->payload_json);
 
                 return [$snapshot->symbol_id => $payload];
             })
             ->all();
+    }
+
+    /**
+     * @param  array<string,mixed>|mixed  $payloadJson
+     * @return array<string,mixed>
+     */
+    private function normalizeSnapshotPayload(mixed $payloadJson): array
+    {
+        if (! is_array($payloadJson)) {
+            return [];
+        }
+
+        $topLevelMetrics = Arr::get($payloadJson, 'metrics');
+        if (is_array($topLevelMetrics)) {
+            return $topLevelMetrics;
+        }
+
+        $symbolData = Arr::get($payloadJson, 'symbol_data');
+        if (is_array($symbolData)) {
+            $symbolMetrics = Arr::get($symbolData, 'metrics');
+            if (is_array($symbolMetrics)) {
+                return $symbolMetrics;
+            }
+
+            return $symbolData;
+        }
+
+        return $payloadJson;
     }
 
     /**

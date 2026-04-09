@@ -166,3 +166,21 @@ Behavior:
 Config knobs (optional):
 - `INTRADAY_NEAR_BAND_TOLERANCE_PERCENT` (default: `0.75`)
 - `INTRADAY_MAX_EXTENSION_PERCENT` (default: `1.5`)
+
+### Minimal intraday data path for T09
+
+Generate intraday JSON for only active symbols, then ingest as `intraday` snapshots:
+
+```bash
+cd ../python_ibkr
+python scripts/fetch_intraday_data.py AAPL MSFT --output ../laravel_app/storage/app/intraday_snapshot.json
+
+cd ../laravel_app
+php artisan market:ingest-json storage/app/intraday_snapshot.json --snapshot=intraday
+php artisan prompt:intraday-validate
+```
+
+Notes:
+- keeps the same Python -> JSON -> Laravel ingestion pattern as daily bars
+- stores one `market_snapshots` row per symbol payload with `snapshot_type=intraday`
+- T09 reads latest intraday snapshot fields including `current_price`, `session_high`, `session_low`, and nullable `intraday_vwap`

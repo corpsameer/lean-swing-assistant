@@ -55,6 +55,65 @@ class IBKRClient:
         result.sort(key=lambda bar: bar["datetime_utc"])
         return result
 
+    def fetch_intraday_snapshot(
+        self,
+        symbol: str,
+        bar_size: str = "5 mins",
+        duration: str = "1 D",
+    ) -> dict[str, Any]:
+        contract = Stock(symbol=symbol, exchange="SMART", currency="USD")
+        self.ib.qualifyContracts(contract)
+
+        bars = self.ib.reqHistoricalData(
+            contract,
+            endDateTime="",
+            durationStr=duration,
+            barSizeSetting=bar_size,
+            whatToShow="TRADES",
+            useRTH=True,
+            formatDate=2,
+        )
+
+        normalized_bars: list[dict[str, Any]] = []
+        for bar in bars:
+            normalized_bars.append(
+                {
+                    "datetime_utc": _normalize_to_utc(bar.date),
+                    "open": float(bar.open),
+                    "high": float(bar.high),
+                    "low": float(bar.low),
+                    "close": float(bar.close),
+                    "volume": int(bar.volume),
+                }
+            )
+
+        normalized_bars.sort(key=lambda row: row["datetime_utc"])
+
+        if normalized_bars == []:
+            raise ValueError("No intraday bars returned.")
+
+        current_price = float(normalized_bars[-1]["close"])
+        session_high = max(float(row["high"]) for row in normalized_bars)
+        session_low = min(float(row["low"]) for row in normalized_bars)
+
+        total_volume = sum(int(row["volume"]) for row in normalized_bars if int(row["volume"]) > 0)
+        intraday_vwap = None
+        if total_volume > 0:
+            vwap_numerator = sum(
+                float(row["close"]) * int(row["volume"])
+                for row in normalized_bars
+                if int(row["volume"]) > 0
+            )
+            intraday_vwap = vwap_numerator / total_volume
+
+        return {
+            "current_price": current_price,
+            "session_high": session_high,
+            "session_low": session_low,
+            "intraday_vwap": intraday_vwap,
+            "bars": normalized_bars,
+        }
+
 
 def _normalize_to_utc(value: Any) -> str:
     if isinstance(value, datetime):
