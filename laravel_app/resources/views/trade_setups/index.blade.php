@@ -4,53 +4,62 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trade Setups</title>
-    @vite(['resources/css/app.css'])
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
+        main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 28px; }
+        p { margin: 0; color: #4b5563; }
+        .panel { margin-top: 20px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .empty { padding: 16px; color: #374151; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { text-align: left; border-bottom: 1px solid #e5e7eb; padding: 8px 10px; vertical-align: top; }
+        th { background: #f9fafb; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; white-space: nowrap; }
+        td { background: #fff; }
+        .nowrap { white-space: nowrap; }
+    </style>
 </head>
-<body class="bg-gray-100 text-gray-900">
-    <main class="mx-auto max-w-7xl p-6">
-        <h1 class="text-2xl font-semibold">Trade Setups</h1>
-        <p class="mt-1 text-sm text-gray-600">Read-only visibility of generated trade setups.</p>
+<body>
+    <main>
+        <h1>Trade Setups</h1>
+        <p>Read-only visibility of generated trade setups.</p>
 
         @if ($tradeSetups->isEmpty())
-            <div class="mt-6 rounded border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-700">
-                No trade setups found yet.
-            </div>
+            <div class="panel empty">No trade setups found yet.</div>
         @else
-            <div class="mt-6 overflow-x-auto rounded bg-white shadow">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+            <div class="panel table-wrap">
+                <table>
+                    <thead>
                         <tr>
-                            <th class="px-3 py-2">Symbol</th>
-                            <th class="px-3 py-2">Status</th>
-                            <th class="px-3 py-2">Entry Price</th>
-                            <th class="px-3 py-2">Stop Price</th>
-                            <th class="px-3 py-2">Target 1</th>
-                            <th class="px-3 py-2">Target 2</th>
-                            <th class="px-3 py-2">Risk %</th>
-                            <th class="px-3 py-2">Setup Type</th>
-                            <th class="px-3 py-2">Candidate Stage</th>
-                            <th class="px-3 py-2">Notes</th>
-                            <th class="px-3 py-2">Created At</th>
-                            <th class="px-3 py-2">Updated At</th>
+                            <th>Symbol</th>
+                            <th>Status</th>
+                            <th>Entry Price</th>
+                            <th>Stop Price</th>
+                            <th>Target 1</th>
+                            <th>Target 2</th>
+                            <th>Risk %</th>
+                            <th>Setup Type</th>
+                            <th>Candidate Stage</th>
+                            <th>Notes</th>
+                            <th>Created At</th>
+                            <th>Updated At</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-100 bg-white">
+                    <tbody>
                         @foreach ($tradeSetups as $setup)
-                            <tr class="align-top">
-                                <td class="whitespace-nowrap px-3 py-2">
-                                    {{ $setup->symbol?->symbol ?? ($setup->symbol_id ? 'ID '.$setup->symbol_id : '—') }}
-                                </td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->status ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->entry_price ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->stop_price ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->target1_price ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->target2_price ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->risk_percent ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->sourceCandidate?->setup_type ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->sourceCandidate?->stage ?? '—' }}</td>
-                                <td class="px-3 py-2">{{ $setup->notes ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->created_at?->toDateTimeString() ?? '—' }}</td>
-                                <td class="whitespace-nowrap px-3 py-2">{{ $setup->updated_at?->toDateTimeString() ?? '—' }}</td>
+                            <tr>
+                                <td class="nowrap">{{ $setup->symbol?->symbol ?? ($setup->symbol_id ? 'ID '.$setup->symbol_id : '—') }}</td>
+                                <td class="nowrap">{{ $setup->status ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->entry_price ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->stop_price ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->target1_price ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->target2_price ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->risk_percent ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->sourceCandidate?->setup_type ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->sourceCandidate?->stage ?? '—' }}</td>
+                                <td>{{ $setup->notes ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->created_at?->toDateTimeString() ?? '—' }}</td>
+                                <td class="nowrap">{{ $setup->updated_at?->toDateTimeString() ?? '—' }}</td>
                             </tr>
                         @endforeach
                     </tbody>
