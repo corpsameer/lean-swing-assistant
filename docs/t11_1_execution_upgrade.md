@@ -88,17 +88,17 @@ Expected:
 ### 3) Test C — Actual paper mode (IBKR paper transmit)
 
 1. Start IBKR TWS paper + API access.
-2. Ensure Python connector env points to paper endpoint.
+2. Ensure Python connector env points to paper endpoint. Use a real IBKR-tradable symbol (for example AAPL or MSFT), not a dummy ticker.
 3. Run one setup type at a time.
 
 #### Breakout (paper transmit)
 ```bash
-php artisan trade:execution-scenario-test paper breakout --force-paper --symbol=T11CBRK --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
+php artisan trade:execution-scenario-test paper breakout --force-paper --symbol=AAPL --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
 ```
 
 #### Pullback (paper transmit)
 ```bash
-php artisan trade:execution-scenario-test paper pullback --force-paper --symbol=T11CPBK --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
+php artisan trade:execution-scenario-test paper pullback --force-paper --symbol=MSFT --entry=184.50 --stop=182.50 --target=188.00 --quantity=1
 ```
 
 Expected (both):

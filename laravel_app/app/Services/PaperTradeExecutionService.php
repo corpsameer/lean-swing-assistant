@@ -79,6 +79,11 @@ class PaperTradeExecutionService
                 }
             }
 
+            $parentBrokerStatus = strtolower((string) ($response['broker_statuses']['parent'] ?? ''));
+            $storedStatus = $dryRun
+                ? 'simulated_dry_run'
+                : ($parentBrokerStatus === 'cancelled' ? 'cancelled_paper' : 'submitted_paper');
+
             $orderPayload = [
                 'trade_setup_id' => $tradeSetup->id,
                 'broker_order_id' => $brokerOrderId,
@@ -87,7 +92,7 @@ class PaperTradeExecutionService
                 'quantity' => (float) ($parentOrder['quantity'] ?? $quantity),
                 'limit_price' => isset($parentOrder['limit_price']) ? (float) $parentOrder['limit_price'] : null,
                 'stop_price' => isset($parentOrder['stop_price']) ? (float) $parentOrder['stop_price'] : null,
-                'status' => $dryRun ? 'simulated_dry_run' : 'submitted_paper',
+                'status' => $storedStatus,
                 'placed_at' => now('UTC'),
                 'meta_json' => [
                     ...$response,

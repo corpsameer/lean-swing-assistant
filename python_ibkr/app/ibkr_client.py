@@ -206,7 +206,37 @@ class IBKRClient:
                 "take_profit": take_profit_trade.orderStatus.status,
                 "stop_loss": stop_loss_trade.orderStatus.status,
             },
+            "broker_diagnostics": {
+                "parent": _trade_diagnostics(parent_trade),
+                "take_profit": _trade_diagnostics(take_profit_trade),
+                "stop_loss": _trade_diagnostics(stop_loss_trade),
+            },
         }
+
+
+def _trade_diagnostics(trade: Any) -> dict[str, Any]:
+    log_entries = []
+    for entry in getattr(trade, "log", []) or []:
+        log_entries.append(
+            {
+                "status": getattr(entry, "status", None),
+                "message": getattr(entry, "message", None),
+                "error_code": getattr(entry, "errorCode", None),
+            }
+        )
+
+    last_message = None
+    for row in reversed(log_entries):
+        message = row.get("message")
+        if isinstance(message, str) and message.strip() != "":
+            last_message = message
+            break
+
+    return {
+        "status": getattr(getattr(trade, "orderStatus", None), "status", None),
+        "last_message": last_message,
+        "log": log_entries,
+    }
 
 
 def _normalize_to_utc(value: Any) -> str:

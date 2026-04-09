@@ -15,7 +15,7 @@ class TestExecutionScenarioCommand extends Command
     protected $signature = 'trade:execution-scenario-test
         {scenario : disabled|dry-run|paper}
         {setup_type : breakout|pullback}
-        {--symbol=TESTT11 : Dummy symbol to use}
+        {--symbol=AAPL : Symbol to use (paper scenario requires a real IBKR symbol)}
         {--entry=100.00 : Entry price}
         {--stop=98.00 : Stop price}
         {--target=104.00 : Target1 price}
@@ -55,6 +55,12 @@ class TestExecutionScenarioCommand extends Command
 
         if ($symbolText === '' || $entryPrice <= 0 || $stopPrice <= 0 || $targetPrice <= 0 || $quantity <= 0) {
             $this->error('symbol, entry, stop, target, and quantity must all be valid positive values.');
+
+            return self::FAILURE;
+        }
+
+        if ($scenario === 'paper' && preg_match('/^(TEST|T\d)/', $symbolText) === 1) {
+            $this->error('paper scenario requires a real IBKR-tradable symbol (example: AAPL, MSFT). Dummy symbols are rejected.');
 
             return self::FAILURE;
         }
