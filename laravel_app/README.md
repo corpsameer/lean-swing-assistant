@@ -119,3 +119,20 @@ Trend-state rule (deterministic):
 - `uptrend` if price is above 50-day midpoint and closer to 50-day high than low
 - `downtrend` if price is below 50-day midpoint and closer to 50-day low than high
 - otherwise `neutral`
+
+## Weekend Prompt A Rank Command (T07)
+
+Rank the latest weekend candidates with one batch OpenAI call:
+
+```bash
+php artisan prompt:weekend-rank
+```
+
+Behavior:
+- creates one `runs` row with `run_type=weekend_prompt_rank`
+- loads the latest `watchlist_candidates` rows where `stage=weekend`
+- loads each symbol's latest `derived_daily_metrics`
+- sends one structured Prompt A payload to OpenAI
+- stores request/response in `prompt_logs` (`prompt_type=A`, batch row with nullable `symbol_id`)
+- updates matching `watchlist_candidates` rows (`score_total`, optional `setup_type`, `reasoning_text`, `prompt_output_json`)
+- prints concise summary counts: sent, ranked, updated, errors
