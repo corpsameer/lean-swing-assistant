@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\WatchlistCandidate;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
@@ -130,8 +131,21 @@ class IntradayRefreshService
             return storage_path('app/intraday_snapshot.json');
         }
 
-        return str_starts_with($configuredPath, DIRECTORY_SEPARATOR)
+        return $this->isAbsolutePath($configuredPath)
             ? $configuredPath
             : base_path($configuredPath);
+    }
+
+    private function isAbsolutePath(string $path): bool
+    {
+        if ($path === '') {
+            return false;
+        }
+
+        if (str_starts_with($path, DIRECTORY_SEPARATOR) || str_starts_with($path, '\\\\')) {
+            return true;
+        }
+
+        return Str::match('/^[A-Za-z]:[\\\\\\/]/', $path) !== '';
     }
 }
