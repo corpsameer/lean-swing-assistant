@@ -14,6 +14,7 @@ class Order extends Model
 
     protected $fillable = [
         'trade_setup_id',
+        'symbol_id',
         'broker_order_id',
         'order_type',
         'side',
@@ -41,5 +42,10 @@ class Order extends Model
     public function tradeSetup(): BelongsTo
     {
         return $this->belongsTo(TradeSetup::class);
+    }
+
+    public function symbol(): BelongsTo
+    {
+        return $this->belongsTo(Symbol::class);
     }
 }
