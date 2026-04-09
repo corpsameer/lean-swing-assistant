@@ -18,6 +18,8 @@ class OpenAiService
         $model = (string) config('services.openai.model', 'gpt-4.1-mini');
         $timeout = (int) config('services.openai.timeout_seconds', 30);
 
+        $schemaName = (string) ($payload['schema_name'] ?? 'weekend_candidate_ranker');
+
         $requestPayload = [
             'model' => $model,
             'messages' => [
@@ -33,7 +35,7 @@ class OpenAiService
             'response_format' => [
                 'type' => 'json_schema',
                 'json_schema' => [
-                    'name' => 'weekend_candidate_ranker',
+                    'name' => $schemaName,
                     'strict' => true,
                     'schema' => $payload['json_schema'],
                 ],
