@@ -12,7 +12,7 @@ use Throwable;
 
 class PaperTradeExecutionService
 {
-    public function executeBuyLimitForSetup(TradeSetup $tradeSetup, string $symbol): void
+    public function executeForSetup(TradeSetup $tradeSetup, string $symbol): void
     {
         $isExecutionEnabled = (bool) config('services.trade_execution.enabled', false);
         $brokerMode = strtolower((string) config('services.trade_execution.broker_trading_mode', 'paper'));
@@ -28,62 +28,96 @@ class PaperTradeExecutionService
             return;
         }
 
-        $quantity = (float) config('services.trade_execution.default_quantity', 1);
-        $entryPrice = (float) $tradeSetup->entry_price;
+        $tradeSetup->loadMissing('sourceCandidate');
 
-        Log::info('placing order...', [
-            'symbol' => $symbol,
+        $setupType = strtolower((string) optional($tradeSetup->sourceCandidate)->setup_type);
+        if (! in_array($setupType, ['breakout', 'pullback'], true)) {
+            $setupType = 'pullback';
+        }
+
+        $quantity = (float) config('services.trade_execution.paper_order_quantity', 1);
+        $dryRun = (bool) config('services.trade_execution.dry_run', true);
+        $entryPrice = (float) $tradeSetup->entry_price;
+        $stopPrice = (float) $tradeSetup->stop_price;
+        $target1Price = (float) $tradeSetup->target1_price;
+
+        Log::info('placing setup-aware paper bracket order', [
+            'symbol' => strtoupper(trim($symbol)),
             'trade_setup_id' => $tradeSetup->id,
-            'side' => 'BUY',
-            'order_type' => 'LMT',
+            'setup_type' => $setupType,
             'quantity' => $quantity,
-            'price' => $entryPrice,
+            'dry_run' => $dryRun,
+            'broker_trading_mode' => $brokerMode,
         ]);
 
         try {
-            $response = $this->runPythonOrderPlacement($symbol, $entryPrice, $quantity, $brokerMode);
+            $response = $this->runPythonOrderPlacement(
+                symbol: $symbol,
+                setupType: $setupType,
+                entryPrice: $entryPrice,
+                stopPrice: $stopPrice,
+                target1Price: $target1Price,
+                quantity: $quantity,
+                dryRun: $dryRun,
+                brokerMode: $brokerMode,
+            );
 
             if (($response['status'] ?? null) !== 'success') {
                 throw new RuntimeException((string) ($response['error'] ?? 'unknown order placement error'));
             }
 
-            $brokerOrderId = (string) ($response['order_id'] ?? '');
-            if ($brokerOrderId === '') {
-                throw new RuntimeException('Order placement succeeded but broker order_id is missing.');
+            $parentOrder = $response['orders']['parent'] ?? null;
+            if (! is_array($parentOrder)) {
+                throw new RuntimeException('Order placement response missing parent order details.');
             }
+
+            $brokerOrderId = null;
+            if (! $dryRun) {
+                $brokerOrderId = (string) (($response['broker_order_ids']['parent'] ?? null) ?: '');
+                if ($brokerOrderId === '') {
+                    throw new RuntimeException('Paper order placement succeeded but parent broker order id is missing.');
+                }
+            }
+
+            $parentBrokerStatus = strtolower((string) ($response['broker_statuses']['parent'] ?? ''));
+            $storedStatus = $dryRun
+                ? 'simulated_dry_run'
+                : ($parentBrokerStatus === 'cancelled' ? 'cancelled_paper' : 'submitted_paper');
 
             $orderPayload = [
                 'trade_setup_id' => $tradeSetup->id,
                 'broker_order_id' => $brokerOrderId,
-                'order_type' => 'LMT',
-                'side' => 'BUY',
-                'quantity' => $quantity,
-                'limit_price' => $entryPrice,
-                'status' => 'pending',
+                'order_type' => (string) ($parentOrder['order_type'] ?? 'UNKNOWN'),
+                'side' => (string) ($parentOrder['action'] ?? 'BUY'),
+                'quantity' => (float) ($parentOrder['quantity'] ?? $quantity),
+                'limit_price' => isset($parentOrder['limit_price']) ? (float) $parentOrder['limit_price'] : null,
+                'stop_price' => isset($parentOrder['stop_price']) ? (float) $parentOrder['stop_price'] : null,
+                'status' => $storedStatus,
                 'placed_at' => now('UTC'),
-                'meta_json' => $response,
+                'meta_json' => [
+                    ...$response,
+                    'execution_note' => $dryRun
+                        ? 'dry-run only: no broker transmission'
+                        : 'paper bracket transmitted to broker',
+                ],
             ];
 
             if (Schema::hasColumn('orders', 'symbol_id')) {
                 $orderPayload['symbol_id'] = $tradeSetup->symbol_id;
-            } else {
-                Log::warning('orders.symbol_id column is missing; run migrations to persist symbol_id', [
-                    'trade_setup_id' => $tradeSetup->id,
-                    'symbol' => $symbol,
-                ]);
             }
 
             Order::create($orderPayload);
 
-            Log::info('order placed successfully', [
-                'symbol' => $symbol,
+            Log::info('paper execution completed', [
+                'symbol' => strtoupper(trim($symbol)),
                 'trade_setup_id' => $tradeSetup->id,
-                'order_id' => $brokerOrderId,
+                'dry_run' => $dryRun,
+                'status' => $orderPayload['status'],
+                'parent_broker_order_id' => $brokerOrderId,
             ]);
-            Log::info('order_id', ['order_id' => $brokerOrderId]);
         } catch (Throwable $throwable) {
             Log::error('order placement error', [
-                'symbol' => $symbol,
+                'symbol' => strtoupper(trim($symbol)),
                 'trade_setup_id' => $tradeSetup->id,
                 'message' => $throwable->getMessage(),
             ]);
@@ -93,10 +127,19 @@ class PaperTradeExecutionService
     /**
      * @return array<string, mixed>
      */
-    private function runPythonOrderPlacement(string $symbol, float $entryPrice, float $quantity, string $brokerMode): array
-    {
+    private function runPythonOrderPlacement(
+        string $symbol,
+        string $setupType,
+        float $entryPrice,
+        float $stopPrice,
+        float $target1Price,
+        float $quantity,
+        bool $dryRun,
+        string $brokerMode,
+    ): array {
         $pythonExecutable = (string) config('services.trade_execution.python_executable', 'python');
         $scriptPath = (string) config('services.trade_execution.script_path', '');
+        $breakoutBuffer = (float) config('services.trade_execution.breakout_stop_limit_buffer', 0.10);
 
         if ($scriptPath === '' || ! is_file($scriptPath)) {
             throw new RuntimeException('Order placement script path is missing or invalid: '.$scriptPath);
@@ -107,11 +150,23 @@ class PaperTradeExecutionService
             $scriptPath,
             '--symbol',
             strtoupper(trim($symbol)),
+            '--setup-type',
+            $setupType,
             '--entry-price',
             (string) $entryPrice,
+            '--stop-price',
+            (string) $stopPrice,
+            '--target1-price',
+            (string) $target1Price,
             '--quantity',
             (string) $quantity,
+            '--breakout-stop-limit-buffer',
+            (string) $breakoutBuffer,
         ];
+
+        if ($dryRun) {
+            $command[] = '--dry-run';
+        }
 
         $process = new Process($command, base_path(), [
             ...$_ENV,

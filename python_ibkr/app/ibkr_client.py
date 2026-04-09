@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
-from ib_insync import IB, LimitOrder, Stock
+from ib_insync import IB, LimitOrder, Order, Stock, StopOrder
 
 from app.config import IBKRSettings
 
@@ -131,21 +131,128 @@ class IBKRClient:
 
         return int(order_id)
 
+    def place_entry_bracket_order(
+        self,
+        *,
+        symbol: str,
+        setup_type: str,
+        quantity: float,
+        entry_price: float,
+        stop_price: float,
+        target1_price: float,
+        breakout_stop_limit_buffer: float,
+    ) -> dict[str, Any]:
+        if self.settings.mode != "paper":
+            raise ValueError("Only paper trading is supported for order placement.")
+
+        contract = Stock(symbol=symbol, exchange="SMART", currency="USD")
+        self.ib.qualifyContracts(contract)
+
+        parent_id = self.ib.client.getReqId()
+        take_profit_id = self.ib.client.getReqId()
+        stop_loss_id = self.ib.client.getReqId()
+
+        if setup_type == "breakout":
+            parent_order = Order(
+                orderId=parent_id,
+                action="BUY",
+                orderType="STP LMT",
+                totalQuantity=float(quantity),
+                auxPrice=float(entry_price),
+                lmtPrice=float(entry_price + breakout_stop_limit_buffer),
+                transmit=False,
+            )
+        elif setup_type == "pullback":
+            parent_order = LimitOrder(
+                orderId=parent_id,
+                action="BUY",
+                totalQuantity=float(quantity),
+                lmtPrice=float(entry_price),
+                transmit=False,
+            )
+        else:
+            raise ValueError(f"Unsupported setup_type: {setup_type}")
+
+        take_profit_order = LimitOrder(
+            orderId=take_profit_id,
+            action="SELL",
+            totalQuantity=float(quantity),
+            lmtPrice=float(target1_price),
+            parentId=parent_id,
+            transmit=False,
+        )
+        stop_loss_order = StopOrder(
+            orderId=stop_loss_id,
+            action="SELL",
+            totalQuantity=float(quantity),
+            stopPrice=float(stop_price),
+            parentId=parent_id,
+            transmit=True,
+        )
+
+        parent_trade = self.ib.placeOrder(contract, parent_order)
+        take_profit_trade = self.ib.placeOrder(contract, take_profit_order)
+        stop_loss_trade = self.ib.placeOrder(contract, stop_loss_order)
+        self.ib.sleep(1.0)
+
+        return {
+            "broker_order_ids": {
+                "parent": int(parent_id),
+                "take_profit": int(take_profit_id),
+                "stop_loss": int(stop_loss_id),
+            },
+            "broker_statuses": {
+                "parent": parent_trade.orderStatus.status,
+                "take_profit": take_profit_trade.orderStatus.status,
+                "stop_loss": stop_loss_trade.orderStatus.status,
+            },
+            "broker_diagnostics": {
+                "parent": _trade_diagnostics(parent_trade),
+                "take_profit": _trade_diagnostics(take_profit_trade),
+                "stop_loss": _trade_diagnostics(stop_loss_trade),
+            },
+        }
+
+
+def _trade_diagnostics(trade: Any) -> dict[str, Any]:
+    log_entries = []
+    for entry in getattr(trade, "log", []) or []:
+        log_entries.append(
+            {
+                "status": getattr(entry, "status", None),
+                "message": getattr(entry, "message", None),
+                "error_code": getattr(entry, "errorCode", None),
+            }
+        )
+
+    last_message = None
+    for row in reversed(log_entries):
+        message = row.get("message")
+        if isinstance(message, str) and message.strip() != "":
+            last_message = message
+            break
+
+    return {
+        "status": getattr(getattr(trade, "orderStatus", None), "status", None),
+        "last_message": last_message,
+        "log": log_entries,
+    }
+
 
 def _normalize_to_utc(value: Any) -> str:
     if isinstance(value, datetime):
-        dt = value if value.tzinfo else value.replace(tzinfo=UTC)
-        return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
     if isinstance(value, date):
-        return datetime(value.year, value.month, value.day, tzinfo=UTC).isoformat().replace(
+        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc).isoformat().replace(
             "+00:00", "Z"
         )
 
     text = str(value)
     try:
         dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        dt = dt if dt.tzinfo else dt.replace(tzinfo=UTC)
-        return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     except ValueError:
         return text
