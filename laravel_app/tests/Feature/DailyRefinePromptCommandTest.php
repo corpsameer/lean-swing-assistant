@@ -11,11 +11,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
-class WeekendPromptRankCommandTest extends TestCase
+class DailyRefinePromptCommandTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_ranks_and_updates_latest_weekend_candidates_with_one_batch_prompt_call(): void
+    public function test_it_refines_latest_weekend_candidates_and_updates_daily_actionable_fields(): void
     {
         config()->set('services.openai.api_key', 'test-key');
         config()->set('services.openai.model', 'gpt-4.1-mini');
@@ -113,6 +113,7 @@ class WeekendPromptRankCommandTest extends TestCase
             'stage' => 'weekend',
             'status' => 'candidate',
             'setup_type' => 'breakout',
+            'score_total' => 24,
             'created_at' => now('UTC')->subMinutes(20),
         ]);
 
@@ -122,12 +123,13 @@ class WeekendPromptRankCommandTest extends TestCase
             'stage' => 'weekend',
             'status' => 'candidate',
             'setup_type' => 'pullback',
+            'score_total' => 22,
             'created_at' => now('UTC')->subMinutes(20),
         ]);
 
         Http::fake([
             'https://api.openai.com/v1/chat/completions' => Http::response([
-                'id' => 'chatcmpl_123',
+                'id' => 'chatcmpl_456',
                 'model' => 'gpt-4.1-mini',
                 'choices' => [
                     [
@@ -135,26 +137,26 @@ class WeekendPromptRankCommandTest extends TestCase
                         'message' => [
                             'role' => 'assistant',
                             'content' => json_encode([
-                                'ranked_candidates' => [
+                                'refined_candidates' => [
                                     [
                                         'symbol' => 'AAPL',
-                                        'keep' => true,
-                                        'score_total' => 24,
+                                        'decision' => 'keep',
                                         'setup_type' => 'breakout',
-                                        'preferred_action' => 'ready_breakout',
-                                        'upside_potential_summary' => 'Tight consolidation near highs with healthy liquidity.',
-                                        'risk_flags' => ['extended if breakout fails'],
-                                        'reasoning_text' => 'Strong trend and close to breakout level; monitor for clean volume confirmation.',
+                                        'trigger_band_low' => 184.2,
+                                        'trigger_band_high' => 185.0,
+                                        'invalidation_note' => 'Break below 20D support zone.',
+                                        'confidence' => 0.82,
+                                        'reasoning_text' => 'Trend remains intact and price is near breakout level with supportive volume.',
                                     ],
                                     [
                                         'symbol' => 'MSFT',
-                                        'keep' => true,
-                                        'score_total' => 22,
+                                        'decision' => 'wait',
                                         'setup_type' => 'pullback',
-                                        'preferred_action' => 'ready_pullback',
-                                        'upside_potential_summary' => 'Orderly pullback in an uptrend can offer continuation entry.',
-                                        'risk_flags' => ['relative volume slightly soft'],
-                                        'reasoning_text' => 'Uptrend intact with moderate pullback depth; better if volume improves.',
+                                        'trigger_band_low' => 401.5,
+                                        'trigger_band_high' => 404.0,
+                                        'invalidation_note' => 'Loss of 50D trend support.',
+                                        'confidence' => 0.68,
+                                        'reasoning_text' => 'Needs cleaner pullback stabilization before becoming actionable.',
                                     ],
                                 ],
                             ], JSON_THROW_ON_ERROR),
@@ -164,10 +166,10 @@ class WeekendPromptRankCommandTest extends TestCase
             ], 200),
         ]);
 
-        $this->artisan('prompt:weekend-rank')
-            ->expectsOutput('Weekend prompt rank completed.')
+        $this->artisan('prompt:daily-refine')
+            ->expectsOutput('Daily refine prompt completed.')
             ->expectsOutputToContain('candidates sent: 2')
-            ->expectsOutputToContain('candidates ranked: 2')
+            ->expectsOutputToContain('candidates refined: 2')
             ->expectsOutputToContain('candidates updated: 2')
             ->expectsOutputToContain('errors: 0')
             ->assertSuccessful();
@@ -176,26 +178,27 @@ class WeekendPromptRankCommandTest extends TestCase
         Http::assertSent(function ($request): bool {
             $payload = $request->data();
 
-            return ! array_key_exists('temperature', $payload);
+            return data_get($payload, 'response_format.json_schema.name') === 'daily_watchlist_refiner';
         });
 
         $latestAaplCandidate->refresh();
         $latestMsftCandidate->refresh();
 
-        $this->assertSame('24.000', (string) $latestAaplCandidate->score_total);
-        $this->assertSame('22.000', (string) $latestMsftCandidate->score_total);
-        $this->assertSame('ready_breakout', $latestAaplCandidate->prompt_output_json['preferred_action']);
-        $this->assertSame('ready_pullback', $latestMsftCandidate->prompt_output_json['preferred_action']);
+        $this->assertSame('keep', $latestAaplCandidate->status);
+        $this->assertSame('wait', $latestMsftCandidate->status);
+        $this->assertSame('184.2000', (string) $latestAaplCandidate->trigger_band_low);
+        $this->assertSame('404.0000', (string) $latestMsftCandidate->trigger_band_high);
+        $this->assertSame('Loss of 50D trend support.', $latestMsftCandidate->prompt_output_json['invalidation_note']);
 
-        $run = Run::query()->where('run_type', 'weekend_prompt_rank')->latest('id')->firstOrFail();
+        $run = Run::query()->where('run_type', 'daily_refine')->latest('id')->firstOrFail();
 
-        $this->assertSame(1, PromptLog::query()->where('run_id', $run->id)->where('prompt_type', 'A')->count());
-        $promptLog = PromptLog::query()->where('run_id', $run->id)->where('prompt_type', 'A')->firstOrFail();
+        $this->assertSame(1, PromptLog::query()->where('run_id', $run->id)->where('prompt_type', 'B')->count());
+        $promptLog = PromptLog::query()->where('run_id', $run->id)->where('prompt_type', 'B')->firstOrFail();
         $this->assertNull($promptLog->symbol_id);
 
         $this->assertSame('completed', $run->status);
         $this->assertSame(2, $run->meta_json['candidates_sent']);
-        $this->assertSame(2, $run->meta_json['candidates_ranked']);
+        $this->assertSame(2, $run->meta_json['candidates_refined']);
         $this->assertSame(2, $run->meta_json['candidates_updated']);
     }
 }
