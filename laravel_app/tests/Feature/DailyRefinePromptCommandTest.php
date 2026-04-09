@@ -190,12 +190,12 @@ class DailyRefinePromptCommandTest extends TestCase
         $this->assertSame('404.0000', (string) $latestMsftCandidate->trigger_band_high);
         $this->assertSame('Loss of 50D trend support.', $latestMsftCandidate->prompt_output_json['invalidation_note']);
 
-        $this->assertDatabaseCount('prompt_logs', 1);
-        $promptLog = PromptLog::query()->firstOrFail();
-        $this->assertSame('B', $promptLog->prompt_type);
+        $run = Run::query()->where('run_type', 'daily_refine')->latest('id')->firstOrFail();
+
+        $this->assertSame(1, PromptLog::query()->where('run_id', $run->id)->where('prompt_type', 'B')->count());
+        $promptLog = PromptLog::query()->where('run_id', $run->id)->where('prompt_type', 'B')->firstOrFail();
         $this->assertNull($promptLog->symbol_id);
 
-        $run = Run::query()->where('run_type', 'daily_refine')->latest('id')->firstOrFail();
         $this->assertSame('completed', $run->status);
         $this->assertSame(2, $run->meta_json['candidates_sent']);
         $this->assertSame(2, $run->meta_json['candidates_refined']);

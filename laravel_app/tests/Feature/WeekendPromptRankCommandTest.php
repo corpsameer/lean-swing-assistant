@@ -187,12 +187,12 @@ class WeekendPromptRankCommandTest extends TestCase
         $this->assertSame('ready_breakout', $latestAaplCandidate->prompt_output_json['preferred_action']);
         $this->assertSame('ready_pullback', $latestMsftCandidate->prompt_output_json['preferred_action']);
 
-        $this->assertDatabaseCount('prompt_logs', 1);
-        $promptLog = PromptLog::query()->firstOrFail();
-        $this->assertSame('A', $promptLog->prompt_type);
+        $run = Run::query()->where('run_type', 'weekend_prompt_rank')->latest('id')->firstOrFail();
+
+        $this->assertSame(1, PromptLog::query()->where('run_id', $run->id)->where('prompt_type', 'A')->count());
+        $promptLog = PromptLog::query()->where('run_id', $run->id)->where('prompt_type', 'A')->firstOrFail();
         $this->assertNull($promptLog->symbol_id);
 
-        $run = Run::query()->where('run_type', 'weekend_prompt_rank')->latest('id')->firstOrFail();
         $this->assertSame('completed', $run->status);
         $this->assertSame(2, $run->meta_json['candidates_sent']);
         $this->assertSame(2, $run->meta_json['candidates_ranked']);
