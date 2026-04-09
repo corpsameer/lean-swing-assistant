@@ -25,6 +25,8 @@ class WatchlistCandidate extends Model
         'support_low_price',
         'support_high_price',
         'trigger_price',
+        'trigger_band_low',
+        'trigger_band_high',
         'reasoning_text',
         'prompt_output_json',
         'created_at',
@@ -39,6 +41,8 @@ class WatchlistCandidate extends Model
             'support_low_price' => 'decimal:4',
             'support_high_price' => 'decimal:4',
             'trigger_price' => 'decimal:4',
+            'trigger_band_low' => 'decimal:4',
+            'trigger_band_high' => 'decimal:4',
             'prompt_output_json' => 'array',
             'created_at' => 'datetime',
         ];
