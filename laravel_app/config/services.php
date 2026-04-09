@@ -47,4 +47,12 @@ return [
         'max_extension_percent' => env('INTRADAY_MAX_EXTENSION_PERCENT', 1.5),
     ],
 
+
+    'intraday_fetch' => [
+        'python_executable' => env('INTRADAY_PYTHON_EXECUTABLE', env('PYTHON_EXECUTABLE', 'python')),
+        'script_path' => env('INTRADAY_FETCH_SCRIPT_PATH', base_path('../python_ibkr/scripts/fetch_intraday_data.py')),
+        'output_path' => env('INTRADAY_FETCH_OUTPUT_PATH', storage_path('app/intraday_snapshot.json')),
+        'timeout_seconds' => env('INTRADAY_FETCH_TIMEOUT_SECONDS', 180),
+    ],
+
 ];

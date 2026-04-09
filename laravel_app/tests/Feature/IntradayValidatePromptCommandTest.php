@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\IntradayRefreshService;
 use App\Models\MarketSnapshot;
 use App\Models\PromptLog;
 use App\Models\Run;
@@ -15,6 +16,22 @@ use Tests\TestCase;
 class IntradayValidatePromptCommandTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * @param  array<int, string>  $symbols
+     */
+    private function mockIntradayRefreshService(array $symbols): void
+    {
+        $mock = $this->mock(IntradayRefreshService::class);
+        $mock->shouldReceive('resolveActiveSymbols')->andReturn($symbols);
+        $mock->shouldReceive('fetchForSymbols')->with($symbols)->andReturn(storage_path('app/intraday_snapshot.json'));
+        $mock->shouldReceive('ingestFromJsonPath')->andReturn([
+            'snapshots_stored' => count($symbols),
+            'total_symbols_processed' => count($symbols),
+            'success_count' => count($symbols),
+            'error_count' => 0,
+        ]);
+    }
 
     public function test_it_validates_only_eligible_candidates_and_creates_planned_setups_without_duplicates(): void
     {
@@ -210,7 +227,13 @@ class IntradayValidatePromptCommandTest extends TestCase
             ], 200),
         ]);
 
+        $this->mockIntradayRefreshService(['AAPL', 'MSFT', 'NVDA']);
+
         $this->artisan('prompt:intraday-validate')
+            ->expectsOutputToContain('active symbols resolved: 3')
+            ->expectsOutputToContain('fetching intraday data...')
+            ->expectsOutputToContain('intraday ingestion completed: 3 snapshots stored')
+            ->expectsOutputToContain('continuing validation...')
             ->expectsOutput('Intraday validate prompt completed.')
             ->expectsOutputToContain('active candidates scanned: 3')
             ->expectsOutputToContain('candidates sent to model: 2')
@@ -333,6 +356,8 @@ class IntradayValidatePromptCommandTest extends TestCase
 
         Http::fake();
 
+        $this->mockIntradayRefreshService(['AAPL']);
+
         $this->artisan('prompt:intraday-validate')
             ->expectsOutputToContain('active candidates scanned: 1')
             ->expectsOutputToContain('candidates sent to model: 0')
@@ -444,6 +469,8 @@ class IntradayValidatePromptCommandTest extends TestCase
                 ],
             ], 200),
         ]);
+
+        $this->mockIntradayRefreshService(['AAPL']);
 
         $this->artisan('prompt:intraday-validate')
             ->expectsOutputToContain('active candidates scanned: 1')

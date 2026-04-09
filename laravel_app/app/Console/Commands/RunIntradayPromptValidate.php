@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\IntradayRefreshService;
 use App\Services\PromptCIntradayValidationService;
 use Illuminate\Console\Command;
 use Throwable;
@@ -12,9 +13,28 @@ class RunIntradayPromptValidate extends Command
 
     protected $description = 'Run Prompt C intraday entry validation and create planned trade setups';
 
-    public function handle(PromptCIntradayValidationService $service): int
+    public function handle(IntradayRefreshService $intradayRefreshService, PromptCIntradayValidationService $service): int
     {
         try {
+            $symbols = $intradayRefreshService->resolveActiveSymbols();
+            $this->line('active symbols resolved: '.count($symbols));
+
+            if ($symbols === []) {
+                $this->info('No active symbols found. Exiting cleanly.');
+
+                return self::SUCCESS;
+            }
+
+            $this->line('fetching intraday data...');
+            $this->line('symbols: '.implode(', ', $symbols));
+            $outputPath = $intradayRefreshService->fetchForSymbols($symbols);
+
+            $this->line('intraday fetch completed');
+            $this->line('ingesting intraday snapshot...');
+            $ingestionSummary = $intradayRefreshService->ingestFromJsonPath($outputPath);
+            $this->line('intraday ingestion completed: '.$ingestionSummary['snapshots_stored'].' snapshots stored');
+            $this->line('continuing validation...');
+
             $summary = $service->run();
         } catch (Throwable $throwable) {
             $this->error('Intraday validate prompt failed: '.$throwable->getMessage());
