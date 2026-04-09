@@ -38,7 +38,6 @@ class OpenAiService
                     'schema' => $payload['json_schema'],
                 ],
             ],
-            'temperature' => 0.1,
         ];
 
         $response = $this->http

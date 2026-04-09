@@ -173,6 +173,11 @@ class WeekendPromptRankCommandTest extends TestCase
             ->assertSuccessful();
 
         Http::assertSentCount(1);
+        Http::assertSent(function ($request): bool {
+            $payload = $request->data();
+
+            return ! array_key_exists('temperature', $payload);
+        });
 
         $latestAaplCandidate->refresh();
         $latestMsftCandidate->refresh();

@@ -136,3 +136,6 @@ Behavior:
 - stores request/response in `prompt_logs` (`prompt_type=A`, batch row with nullable `symbol_id`)
 - updates matching `watchlist_candidates` rows (`score_total`, optional `setup_type`, `reasoning_text`, `prompt_output_json`)
 - prints concise summary counts: sent, ranked, updated, errors
+
+Model note:
+- the command does not force `temperature`, which avoids 400 errors on models that only support default temperature behavior (e.g., `OPENAI_MODEL=gpt-5`)
