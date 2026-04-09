@@ -91,7 +91,7 @@ class IntradayValidatePromptCommandTest extends TestCase
             'snapshot_type' => 'intraday',
             'payload_json' => [
                 'metrics' => [
-                    'current_price' => 418.0,
+                    'current_price' => 413.8,
                     'session_high' => 419.2,
                     'session_low' => 410.5,
                     'intraday_vwap' => 416.8,
@@ -340,5 +340,117 @@ class IntradayValidatePromptCommandTest extends TestCase
             ->assertSuccessful();
 
         Http::assertNothingSent();
+    }
+
+    public function test_it_reads_intraday_metrics_from_ingested_symbol_data_payload(): void
+    {
+        config()->set('services.openai.api_key', 'test-key');
+        config()->set('services.openai.model', 'gpt-4.1-mini');
+        config()->set('services.intraday_validation.near_band_tolerance_percent', 0.75);
+        config()->set('services.intraday_validation.max_extension_percent', 1.5);
+
+        $dailyMetricsRun = Run::create([
+            'run_type' => 'compute_daily_metrics',
+            'status' => 'completed',
+            'started_at' => now('UTC')->subHours(2),
+            'completed_at' => now('UTC')->subHours(2),
+        ]);
+
+        $latestRefineRun = Run::create([
+            'run_type' => 'daily_refine',
+            'status' => 'completed',
+            'started_at' => now('UTC')->subMinutes(15),
+            'completed_at' => now('UTC')->subMinutes(15),
+        ]);
+
+        $aapl = Symbol::firstOrCreate(['symbol' => 'AAPL'], ['is_active' => true]);
+
+        MarketSnapshot::create([
+            'run_id' => $dailyMetricsRun->id,
+            'symbol_id' => $aapl->id,
+            'snapshot_type' => 'derived_daily_metrics',
+            'payload_json' => [
+                'metrics' => [
+                    'breakout_level' => 185.0,
+                    'support_level' => 178.0,
+                    'trend_state' => 'uptrend',
+                    'atr_percent' => 2.1,
+                    'distance_to_breakout_percent' => 0.7,
+                    'extension_percent' => 0.2,
+                    'relative_volume_simple' => 1.1,
+                ],
+            ],
+            'created_at' => now('UTC')->subMinutes(10),
+        ]);
+
+        MarketSnapshot::create([
+            'run_id' => $dailyMetricsRun->id,
+            'symbol_id' => $aapl->id,
+            'snapshot_type' => 'intraday',
+            'payload_json' => [
+                'mode' => 'paper',
+                'symbol_data' => [
+                    'symbol' => 'AAPL',
+                    'status' => 'ok',
+                    'snapshot_type' => 'intraday',
+                    'metrics' => [
+                        'current_price' => 184.8,
+                        'session_high' => 185.3,
+                        'session_low' => 184.0,
+                        'intraday_vwap' => 184.5,
+                    ],
+                ],
+            ],
+            'created_at' => now('UTC')->subMinutes(5),
+        ]);
+
+        WatchlistCandidate::create([
+            'run_id' => $latestRefineRun->id,
+            'symbol_id' => $aapl->id,
+            'stage' => 'weekend',
+            'status' => 'keep',
+            'setup_type' => 'breakout',
+            'trigger_band_low' => 184.0,
+            'trigger_band_high' => 185.0,
+            'created_at' => now('UTC')->subMinutes(12),
+        ]);
+
+        Http::fake([
+            'https://api.openai.com/v1/chat/completions' => Http::response([
+                'id' => 'chatcmpl_790',
+                'model' => 'gpt-4.1-mini',
+                'choices' => [
+                    [
+                        'index' => 0,
+                        'message' => [
+                            'role' => 'assistant',
+                            'content' => json_encode([
+                                'validated_candidates' => [
+                                    [
+                                        'symbol' => 'AAPL',
+                                        'decision' => 'wait',
+                                        'entry_price' => 184.8,
+                                        'stop_price' => 183.2,
+                                        'target1_price' => 188.0,
+                                        'target2_price' => 190.0,
+                                        'already_extended' => false,
+                                        'risk_note' => 'Wait for clean break.',
+                                        'reasoning_text' => 'Valid intraday metrics were loaded.',
+                                    ],
+                                ],
+                            ], JSON_THROW_ON_ERROR),
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('prompt:intraday-validate')
+            ->expectsOutputToContain('active candidates scanned: 1')
+            ->expectsOutputToContain('candidates sent to model: 1')
+            ->doesntExpectOutputToContain('AAPL skipped: missing intraday price')
+            ->assertSuccessful();
+
+        Http::assertSentCount(1);
     }
 }

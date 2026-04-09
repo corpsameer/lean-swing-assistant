@@ -12,6 +12,7 @@ Minimal IBKR connector skeleton for:
 - `app/ibkr_client.py`: tiny IBKR wrapper (connect + daily bars)
 - `scripts/test_connection.py`: connectivity smoke test
 - `scripts/fetch_daily_bars.py`: fetch daily bars for one or more symbols
+- `scripts/fetch_intraday_data.py`: fetch intraday snapshot data for one or more symbols
 
 ## Setup
 
@@ -64,6 +65,47 @@ JSON shape:
           "low": 1.0,
           "close": 1.0,
           "volume": 123
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 3) Fetch intraday snapshots
+
+```bash
+python scripts/fetch_intraday_data.py AAPL MSFT
+python scripts/fetch_intraday_data.py AAPL --bar-size "1 min" --duration "1 D" --output intraday.json
+python scripts/fetch_intraday_data.py AAPL MSFT --output ../laravel_app/storage/app/intraday_snapshot.json
+```
+
+JSON shape:
+
+```json
+{
+  "mode": "paper",
+  "fetched_at_utc": "2026-01-01T00:00:00Z",
+  "snapshot_type": "intraday",
+  "symbols": [
+    {
+      "symbol": "AAPL",
+      "status": "ok",
+      "snapshot_type": "intraday",
+      "metrics": {
+        "current_price": 184.7,
+        "session_high": 185.2,
+        "session_low": 182.4,
+        "intraday_vwap": 184.1
+      },
+      "bars": [
+        {
+          "datetime_utc": "2026-01-01T14:30:00Z",
+          "open": 184.1,
+          "high": 184.4,
+          "low": 183.9,
+          "close": 184.2,
+          "volume": 12345
         }
       ]
     }
