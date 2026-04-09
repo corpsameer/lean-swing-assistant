@@ -41,4 +41,10 @@ return [
         'timeout_seconds' => env('OPENAI_TIMEOUT_SECONDS', 30),
     ],
 
+
+    'intraday_validation' => [
+        'near_band_tolerance_percent' => env('INTRADAY_NEAR_BAND_TOLERANCE_PERCENT', 0.75),
+        'max_extension_percent' => env('INTRADAY_MAX_EXTENSION_PERCENT', 1.5),
+    ],
+
 ];
