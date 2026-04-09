@@ -154,7 +154,7 @@ class PromptCIntradayValidationService
                             $summary['trade_setups_created']++;
 
                             DB::afterCommit(function () use ($tradeSetup, $symbol): void {
-                                $this->paperTradeExecutionService->executeBuyLimitForSetup($tradeSetup, $symbol);
+                                $this->paperTradeExecutionService->executeForSetup($tradeSetup, $symbol);
                             });
                         }
                     }
