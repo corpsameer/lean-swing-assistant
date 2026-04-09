@@ -66,4 +66,10 @@ return [
         'timeout_seconds' => env('EXECUTION_TIMEOUT_SECONDS', 30),
     ],
 
+    'trade_status_sync' => [
+        'python_executable' => env('STATUS_SYNC_PYTHON_EXECUTABLE', env('PYTHON_EXECUTABLE', 'python')),
+        'script_path' => env('STATUS_SYNC_SCRIPT_PATH', base_path('../python_ibkr/scripts/fetch_order_status.py')),
+        'timeout_seconds' => env('STATUS_SYNC_TIMEOUT_SECONDS', 30),
+    ],
+
 ];
