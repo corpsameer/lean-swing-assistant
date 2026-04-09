@@ -150,7 +150,7 @@ php artisan prompt:intraday-validate
 
 Behavior:
 - creates one `runs` row with `run_type=intraday_validate`
-- loads latest `watchlist_candidates` where `status` is `keep` or `wait`
+- loads latest `watchlist_candidates` per symbol where `status` is `keep` or `wait` (latest = highest candidate id)
 - loads latest `derived_daily_metrics` and `intraday` snapshot payloads per symbol
 - applies deterministic eligibility checks before model call:
   - requires trigger bands
