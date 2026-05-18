@@ -19,6 +19,7 @@ class PaperTradeExecutionService
     {
         $isExecutionEnabled = (bool) config('services.trade_execution.enabled', false);
         $brokerMode = strtolower((string) config('services.trade_execution.broker_trading_mode', 'paper'));
+        $executionDriver = strtolower((string) config('services.trade_execution.execution_driver', 'ibkr'));
 
         if (! $isExecutionEnabled || $brokerMode !== 'paper') {
             Log::info('paper execution skipped', [
@@ -48,6 +49,14 @@ class PaperTradeExecutionService
         $stopPrice = (float) $tradeSetup->stop_price;
         $target1Price = (float) $tradeSetup->target1_price;
 
+
+        if ($executionDriver === 'simulated') {
+            return $this->createSimulatedOrder(
+                tradeSetup: $tradeSetup,
+                setupType: $setupType,
+                quantity: $quantity,
+            );
+        }
         Log::info('placing setup-aware paper bracket order', [
             'symbol' => strtoupper(trim($symbol)),
             'trade_setup_id' => $tradeSetup->id,
@@ -162,6 +171,55 @@ class PaperTradeExecutionService
                 'order_id' => null,
             ];
         }
+    }
+
+
+    /**
+     * @return array{status:string,message:string,order_id:int|null}
+     */
+    private function createSimulatedOrder(TradeSetup $tradeSetup, string $setupType, float $quantity): array
+    {
+        $orderType = $setupType === 'breakout' ? 'STP LMT' : 'LMT';
+
+        $orderPayload = [
+            'trade_setup_id' => $tradeSetup->id,
+            'broker_order_id' => null,
+            'order_type' => $orderType,
+            'side' => 'BUY',
+            'quantity' => $quantity,
+            'limit_price' => (float) $tradeSetup->entry_price,
+            'stop_price' => $setupType === 'breakout' ? (float) $tradeSetup->entry_price : null,
+            'status' => 'simulated_pending',
+            'placed_at' => now('UTC'),
+            'meta_json' => [
+                'execution_driver' => 'simulated',
+                'setup_type' => $setupType,
+                'simulated' => true,
+                'bracket' => [
+                    'take_profit' => (float) $tradeSetup->target1_price,
+                    'stop_loss' => (float) $tradeSetup->stop_price,
+                    'target2_price' => $tradeSetup->target2_price !== null ? (float) $tradeSetup->target2_price : null,
+                ],
+            ],
+        ];
+
+        if (Schema::hasColumn('orders', 'symbol_id')) {
+            $orderPayload['symbol_id'] = $tradeSetup->symbol_id;
+        }
+
+        $order = Order::create($orderPayload);
+
+        Log::info('simulated order created', [
+            'trade_setup_id' => $tradeSetup->id,
+            'order_id' => $order->id,
+            'setup_type' => $setupType,
+        ]);
+
+        return [
+            'status' => 'success',
+            'message' => 'simulated execution order created',
+            'order_id' => $order->id,
+        ];
     }
 
     /**

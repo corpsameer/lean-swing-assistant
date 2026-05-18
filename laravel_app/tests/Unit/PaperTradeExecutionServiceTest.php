@@ -19,6 +19,7 @@ class PaperTradeExecutionServiceTest extends TestCase
     {
         config()->set('services.trade_execution.enabled', false);
         config()->set('services.trade_execution.broker_trading_mode', 'paper');
+        config()->set('services.trade_execution.execution_driver', 'ibkr');
         config()->set('services.trade_execution.script_path', base_path('tests/Fixtures/does_not_exist.php'));
 
         $tradeSetup = $this->createTradeSetup('breakout');
@@ -28,10 +29,40 @@ class PaperTradeExecutionServiceTest extends TestCase
         $this->assertDatabaseCount('orders', 0);
     }
 
+
+    public function test_simulated_driver_creates_local_pending_order_without_python_call(): void
+    {
+        config()->set('services.trade_execution.enabled', true);
+        config()->set('services.trade_execution.broker_trading_mode', 'paper');
+        config()->set('services.trade_execution.execution_driver', 'simulated');
+        config()->set('services.trade_execution.paper_order_quantity', 3);
+        config()->set('services.trade_execution.script_path', base_path('tests/Fixtures/does_not_exist.php'));
+
+        $tradeSetup = $this->createTradeSetup('breakout');
+
+        app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
+
+        /** @var Order $order */
+        $order = Order::query()->firstOrFail();
+
+        $this->assertSame('simulated_pending', $order->status);
+        $this->assertSame('STP LMT', $order->order_type);
+        $this->assertSame('BUY', $order->side);
+        $this->assertEquals('3.0000', (string) $order->quantity);
+        $this->assertSame(184.5, (float) $order->limit_price);
+        $this->assertSame(184.5, (float) $order->stop_price);
+        $this->assertSame('simulated', $order->meta_json['execution_driver']);
+        $this->assertTrue((bool) $order->meta_json['simulated']);
+        $this->assertSame(188.0, (float) $order->meta_json['bracket']['take_profit']);
+        $this->assertSame(182.5, (float) $order->meta_json['bracket']['stop_loss']);
+        $this->assertSame(190.0, (float) $order->meta_json['bracket']['target2_price']);
+    }
+
     public function test_dry_run_mode_stores_simulated_order_record(): void
     {
         config()->set('services.trade_execution.enabled', true);
         config()->set('services.trade_execution.broker_trading_mode', 'paper');
+        config()->set('services.trade_execution.execution_driver', 'ibkr');
         config()->set('services.trade_execution.dry_run', true);
         config()->set('services.trade_execution.paper_order_quantity', 1);
         config()->set('services.trade_execution.breakout_stop_limit_buffer', 0.10);
@@ -56,6 +87,7 @@ class PaperTradeExecutionServiceTest extends TestCase
     {
         config()->set('services.trade_execution.enabled', true);
         config()->set('services.trade_execution.broker_trading_mode', 'paper');
+        config()->set('services.trade_execution.execution_driver', 'ibkr');
         config()->set('services.trade_execution.dry_run', false);
         config()->set('services.trade_execution.paper_order_quantity', 1);
         config()->set('services.trade_execution.python_executable', 'php');
@@ -77,6 +109,7 @@ class PaperTradeExecutionServiceTest extends TestCase
     {
         config()->set('services.trade_execution.enabled', true);
         config()->set('services.trade_execution.broker_trading_mode', 'paper');
+        config()->set('services.trade_execution.execution_driver', 'ibkr');
         config()->set('services.trade_execution.dry_run', false);
         config()->set('services.trade_execution.paper_order_quantity', 1);
         config()->set('services.trade_execution.python_executable', 'php');
