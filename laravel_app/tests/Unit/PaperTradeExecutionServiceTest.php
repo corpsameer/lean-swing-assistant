@@ -24,9 +24,12 @@ class PaperTradeExecutionServiceTest extends TestCase
 
         $tradeSetup = $this->createTradeSetup('breakout');
 
-        app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
+        $result = app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
 
         $this->assertDatabaseCount('orders', 0);
+        $this->assertSame('execution_disabled', $result['status']);
+        $this->assertFalse($result['order_created']);
+        $this->assertFalse($result['broker_called']);
     }
 
 
@@ -40,7 +43,7 @@ class PaperTradeExecutionServiceTest extends TestCase
 
         $tradeSetup = $this->createTradeSetup('breakout');
 
-        app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
+        $result = app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
 
         /** @var Order $order */
         $order = Order::query()->firstOrFail();
@@ -56,9 +59,12 @@ class PaperTradeExecutionServiceTest extends TestCase
         $this->assertSame(188.0, (float) $order->meta_json['bracket']['take_profit']);
         $this->assertSame(182.5, (float) $order->meta_json['bracket']['stop_loss']);
         $this->assertSame(190.0, (float) $order->meta_json['bracket']['target2_price']);
+        $this->assertSame('simulated_pending', $result['status']);
+        $this->assertTrue($result['order_created']);
+        $this->assertFalse($result['broker_called']);
     }
 
-    public function test_dry_run_mode_stores_simulated_order_record(): void
+    public function test_ibkr_dry_run_mode_creates_no_order_and_skips_broker_call(): void
     {
         config()->set('services.trade_execution.enabled', true);
         config()->set('services.trade_execution.broker_trading_mode', 'paper');
@@ -66,21 +72,16 @@ class PaperTradeExecutionServiceTest extends TestCase
         config()->set('services.trade_execution.dry_run', true);
         config()->set('services.trade_execution.paper_order_quantity', 1);
         config()->set('services.trade_execution.breakout_stop_limit_buffer', 0.10);
-        config()->set('services.trade_execution.python_executable', 'php');
-        config()->set('services.trade_execution.script_path', base_path('tests/Fixtures/fake_place_order.php'));
+        config()->set('services.trade_execution.script_path', base_path('tests/Fixtures/does_not_exist.php'));
 
         $tradeSetup = $this->createTradeSetup('breakout');
 
-        app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
+        $result = app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
 
-        /** @var Order $order */
-        $order = Order::query()->firstOrFail();
-
-        $this->assertSame('simulated_dry_run', $order->status);
-        $this->assertNull($order->broker_order_id);
-        $this->assertSame('STP LMT', $order->order_type);
-        $this->assertSame('breakout', $order->meta_json['setup_type']);
-        $this->assertTrue((bool) $order->meta_json['dry_run']);
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertSame('dry_run_only', $result['status']);
+        $this->assertFalse($result['order_created']);
+        $this->assertFalse($result['broker_called']);
     }
 
     public function test_paper_mode_marks_inactive_parent_as_rejected(): void
@@ -95,12 +96,13 @@ class PaperTradeExecutionServiceTest extends TestCase
 
         $tradeSetup = $this->createTradeSetup('breakout');
 
-        app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
+        $result = app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
 
         /** @var Order $order */
         $order = Order::query()->firstOrFail();
 
         $this->assertSame('rejected_paper', $order->status);
+        $this->assertSame('broker_rejected', $result['status']);
         $this->assertStringContainsString('paper bracket rejected by broker', (string) $order->meta_json['execution_note']);
         $this->assertStringContainsString('CASH AVAILABLE: 0.00', (string) $order->meta_json['execution_note']);
     }
@@ -117,12 +119,13 @@ class PaperTradeExecutionServiceTest extends TestCase
 
         $tradeSetup = $this->createTradeSetup('pullback');
 
-        app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
+        $result = app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
 
         /** @var Order $order */
         $order = Order::query()->firstOrFail();
 
         $this->assertSame('submitted_paper', $order->status);
+        $this->assertSame('submitted_paper', $result['status']);
         $this->assertSame('1001', $order->broker_order_id);
         $this->assertSame('LMT', $order->order_type);
         $this->assertFalse((bool) $order->meta_json['dry_run']);

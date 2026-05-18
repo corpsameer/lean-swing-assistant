@@ -20,20 +20,22 @@ class PaperTradeExecutionService
         $isExecutionEnabled = (bool) config('services.trade_execution.enabled', false);
         $brokerMode = strtolower((string) config('services.trade_execution.broker_trading_mode', 'paper'));
         $executionDriver = strtolower((string) config('services.trade_execution.execution_driver', 'ibkr'));
+        $dryRun = (bool) config('services.trade_execution.dry_run', true);
+
+        if (! in_array($executionDriver, ['simulated', 'ibkr'], true)) {
+            $executionDriver = 'simulated';
+        }
 
         if (! $isExecutionEnabled || $brokerMode !== 'paper') {
-            Log::info('paper execution skipped', [
-                'execution_enabled' => $isExecutionEnabled,
-                'broker_trading_mode' => $brokerMode,
-                'trade_setup_id' => $tradeSetup->id,
-                'symbol' => $symbol,
-            ]);
-
-            return [
-                'status' => 'skipped',
-                'message' => 'paper execution is disabled by configuration',
-                'order_id' => null,
-            ];
+            return $this->buildResult(
+                status: 'execution_disabled',
+                orderCreated: false,
+                brokerCalled: false,
+                driver: $executionDriver,
+                dryRun: $dryRun,
+                message: 'execution disabled; no order created',
+                orderId: null,
+            );
         }
 
         $tradeSetup->loadMissing('sourceCandidate');
@@ -43,8 +45,7 @@ class PaperTradeExecutionService
             $setupType = 'pullback';
         }
 
-        $quantity = (float) config('services.trade_execution.paper_order_quantity', 1);
-        $dryRun = (bool) config('services.trade_execution.dry_run', true);
+        $quantity = (float) config('services.trade_execution.default_quantity', config('services.trade_execution.paper_order_quantity', 1));
         $entryPrice = (float) $tradeSetup->entry_price;
         $stopPrice = (float) $tradeSetup->stop_price;
         $target1Price = (float) $tradeSetup->target1_price;
@@ -57,6 +58,19 @@ class PaperTradeExecutionService
                 quantity: $quantity,
             );
         }
+
+        if ($dryRun) {
+            return $this->buildResult(
+                status: 'dry_run_only',
+                orderCreated: false,
+                brokerCalled: false,
+                driver: $executionDriver,
+                dryRun: true,
+                message: 'dry-run only; no broker order placed',
+                orderId: null,
+            );
+        }
+
         Log::info('placing setup-aware paper bracket order', [
             'symbol' => strtoupper(trim($symbol)),
             'trade_setup_id' => $tradeSetup->id,
@@ -107,14 +121,10 @@ class PaperTradeExecutionService
                 'filled' => 'filled_paper',
                 'partiallyfilled' => 'partially_filled_paper',
             ];
-            $storedStatus = $dryRun
-                ? 'simulated_dry_run'
-                : ($statusByBrokerState[$parentBrokerStatus] ?? 'submitted_paper');
+            $storedStatus = $statusByBrokerState[$parentBrokerStatus] ?? 'submitted_paper';
 
             $executionNote = 'paper bracket transmitted to broker';
-            if ($dryRun) {
-                $executionNote = 'dry-run only: no broker transmission';
-            } elseif ($storedStatus === 'rejected_paper') {
+            if ($storedStatus === 'rejected_paper') {
                 $lastBrokerMessage = (string) ($response['broker_diagnostics']['parent']['last_message'] ?? '');
                 $executionNote = $lastBrokerMessage !== ''
                     ? 'paper bracket rejected by broker: '.$lastBrokerMessage
@@ -153,11 +163,15 @@ class PaperTradeExecutionService
                 'parent_broker_order_id' => $brokerOrderId,
             ]);
 
-            return [
-                'status' => 'success',
-                'message' => 'paper execution completed',
-                'order_id' => $order->id,
-            ];
+            return $this->buildResult(
+                status: $storedStatus === 'rejected_paper' ? 'broker_rejected' : $storedStatus,
+                orderCreated: true,
+                brokerCalled: true,
+                driver: $executionDriver,
+                dryRun: false,
+                message: 'paper execution completed',
+                orderId: $order->id,
+            );
         } catch (Throwable $throwable) {
             Log::error('order placement error', [
                 'symbol' => strtoupper(trim($symbol)),
@@ -165,12 +179,32 @@ class PaperTradeExecutionService
                 'message' => $throwable->getMessage(),
             ]);
 
-            return [
-                'status' => 'error',
-                'message' => $throwable->getMessage(),
-                'order_id' => null,
-            ];
+            return $this->buildResult(
+                status: 'error',
+                orderCreated: false,
+                brokerCalled: true,
+                driver: $executionDriver,
+                dryRun: false,
+                message: $throwable->getMessage(),
+                orderId: null,
+            );
         }
+    }
+
+    /**
+     * @return array{status:string,order_created:bool,broker_called:bool,driver:string,dry_run:bool,message:string,order_id:int|null}
+     */
+    private function buildResult(string $status, bool $orderCreated, bool $brokerCalled, string $driver, bool $dryRun, string $message, ?int $orderId): array
+    {
+        return [
+            'status' => $status,
+            'order_created' => $orderCreated,
+            'broker_called' => $brokerCalled,
+            'driver' => $driver,
+            'dry_run' => $dryRun,
+            'message' => $message,
+            'order_id' => $orderId,
+        ];
     }
 
 
@@ -215,11 +249,15 @@ class PaperTradeExecutionService
             'setup_type' => $setupType,
         ]);
 
-        return [
-            'status' => 'success',
-            'message' => 'simulated execution order created',
-            'order_id' => $order->id,
-        ];
+        return $this->buildResult(
+            status: 'simulated_pending',
+            orderCreated: true,
+            brokerCalled: false,
+            driver: 'simulated',
+            dryRun: false,
+            message: 'simulated order created; no broker order placed',
+            orderId: $order->id,
+        );
     }
 
     /**

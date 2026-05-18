@@ -9,7 +9,7 @@ class TestExecutionScenarioCommandTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_paper_scenario_reports_error_when_execution_fails_before_order_row_is_created(): void
+    public function test_paper_scenario_uses_central_execution_summary_output(): void
     {
         config()->set('services.trade_execution.script_path', base_path('tests/Fixtures/does_not_exist.py'));
         config()->set('services.trade_execution.python_executable', 'python');
@@ -24,9 +24,12 @@ class TestExecutionScenarioCommandTest extends TestCase
             '--target' => '188.00',
             '--quantity' => '1',
         ])
-            ->expectsOutputToContain('No order row created for an enabled scenario.')
-            ->expectsOutputToContain('Execution status: error')
-            ->expectsOutputToContain('Order placement script path is missing or invalid')
-            ->assertExitCode(1);
+            ->expectsOutputToContain('execution_driver=simulated')
+            ->expectsOutputToContain('broker_called=false')
+            ->expectsOutputToContain('order_created=true')
+            ->expectsOutputToContain('status=simulated_pending')
+            ->expectsOutputToContain('message=simulated order created; no broker order placed')
+            ->doesntExpectOutputToContain('Order placement script path is missing or invalid')
+            ->assertExitCode(0);
     }
 }

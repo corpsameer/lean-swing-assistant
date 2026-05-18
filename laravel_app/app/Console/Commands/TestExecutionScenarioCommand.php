@@ -68,6 +68,7 @@ class TestExecutionScenarioCommand extends Command
         config()->set('services.trade_execution.broker_trading_mode', 'paper');
         config()->set('services.trade_execution.enabled', $scenario !== 'disabled');
         config()->set('services.trade_execution.dry_run', $scenario !== 'paper');
+        config()->set('services.trade_execution.default_quantity', $quantity);
         config()->set('services.trade_execution.paper_order_quantity', $quantity);
 
         $symbol = Symbol::query()->firstOrCreate(
@@ -114,11 +115,21 @@ class TestExecutionScenarioCommand extends Command
 
         $executionResult = $executionService->executeForSetup($tradeSetup, $symbolText);
 
+        $this->newLine();
+        $this->line('Execution result summary:');
+        $this->line('execution_enabled='.(((bool) config('services.trade_execution.enabled')) ? 'true' : 'false'));
+        $this->line('execution_driver='.(string) ($executionResult['driver'] ?? config('services.trade_execution.execution_driver')));
+        $this->line('dry_run='.(($executionResult['dry_run'] ?? false) ? 'true' : 'false'));
+        $this->line('broker_called='.(($executionResult['broker_called'] ?? false) ? 'true' : 'false'));
+        $this->line('order_created='.(($executionResult['order_created'] ?? false) ? 'true' : 'false'));
+        $this->line('status='.(string) ($executionResult['status'] ?? 'unknown'));
+        $this->line('message='.(string) ($executionResult['message'] ?? 'n/a'));
+
         $order = Order::query()->where('trade_setup_id', $tradeSetup->id)->latest('id')->first();
 
         if ($order === null) {
-            if ($scenario === 'disabled' || ($executionResult['status'] ?? '') === 'skipped') {
-                $this->warn('No order row created (expected for disabled scenario).');
+            if (($executionResult['order_created'] ?? false) === false) {
+                $this->warn('No order row created.');
 
                 return self::SUCCESS;
             }

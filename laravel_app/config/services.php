@@ -60,6 +60,7 @@ return [
         'broker_trading_mode' => env('BROKER_TRADING_MODE', 'paper'),
         'execution_driver' => env('EXECUTION_DRIVER', 'simulated'),
         'dry_run' => env('EXECUTION_DRY_RUN', true),
+        'default_quantity' => env('EXECUTION_DEFAULT_QUANTITY', 1),
         'paper_order_quantity' => env('PAPER_ORDER_QUANTITY', 1),
         'breakout_stop_limit_buffer' => env('BREAKOUT_STOP_LIMIT_BUFFER', 0.10),
         'python_executable' => env('EXECUTION_PYTHON_EXECUTABLE', env('PYTHON_EXECUTABLE', 'python')),
