@@ -213,6 +213,92 @@ class IBKRClient:
             },
         }
 
+    def fetch_order_statuses(self, order_ids: list[int]) -> list[dict[str, Any]]:
+        unique_ids = sorted({int(order_id) for order_id in order_ids})
+        if not unique_ids:
+            return []
+
+        trades_by_order_id: dict[int, Any] = {}
+
+        open_trades = self.ib.reqAllOpenOrders()
+        self.ib.sleep(0.5)
+        for trade in open_trades:
+            order_id = getattr(getattr(trade, "order", None), "orderId", None)
+            if isinstance(order_id, int):
+                trades_by_order_id[order_id] = trade
+
+        completed_trades = self.ib.reqCompletedOrders(apiOnly=False)
+        self.ib.sleep(0.5)
+        for trade in completed_trades:
+            order_id = getattr(getattr(trade, "order", None), "orderId", None)
+            if isinstance(order_id, int):
+                trades_by_order_id[order_id] = trade
+
+        snapshots: list[dict[str, Any]] = []
+        for order_id in unique_ids:
+            trade = trades_by_order_id.get(order_id)
+            if trade is None:
+                snapshots.append(
+                    {
+                        "broker_order_id": str(order_id),
+                        "broker_status": "Unknown",
+                        "filled_quantity": None,
+                        "remaining_quantity": None,
+                        "average_fill_price": None,
+                        "child_statuses": {},
+                        "diagnostics": {"status": None, "last_message": None, "log": []},
+                    }
+                )
+                continue
+
+            order_status = getattr(trade, "orderStatus", None)
+            parent_id = getattr(getattr(trade, "order", None), "parentId", 0)
+            child_statuses: dict[str, str] = {}
+            if isinstance(parent_id, int) and parent_id == 0:
+                child_statuses = self._child_statuses_by_parent_id(
+                    completed_trades=completed_trades,
+                    open_trades=open_trades,
+                    parent_order_id=order_id,
+                )
+
+            snapshots.append(
+                {
+                    "broker_order_id": str(order_id),
+                    "broker_status": str(getattr(order_status, "status", "") or ""),
+                    "filled_quantity": getattr(order_status, "filled", None),
+                    "remaining_quantity": getattr(order_status, "remaining", None),
+                    "average_fill_price": getattr(order_status, "avgFillPrice", None),
+                    "child_statuses": child_statuses,
+                    "diagnostics": _trade_diagnostics(trade),
+                }
+            )
+
+        return snapshots
+
+    def _child_statuses_by_parent_id(
+        self,
+        *,
+        completed_trades: list[Any],
+        open_trades: list[Any],
+        parent_order_id: int,
+    ) -> dict[str, str]:
+        result: dict[str, str] = {}
+
+        for trade in [*open_trades, *completed_trades]:
+            order = getattr(trade, "order", None)
+            if getattr(order, "parentId", None) != parent_order_id:
+                continue
+
+            status = str(getattr(getattr(trade, "orderStatus", None), "status", "") or "")
+            order_type = str(getattr(order, "orderType", "") or "").upper()
+
+            if order_type == "STP":
+                result["stop_loss"] = status
+            elif order_type == "LMT":
+                result["take_profit"] = status
+
+        return result
+
 
 def _trade_diagnostics(trade: Any) -> dict[str, Any]:
     log_entries = []
