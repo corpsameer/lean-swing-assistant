@@ -11,6 +11,9 @@ class TestExecutionScenarioCommandTest extends TestCase
 
     public function test_paper_scenario_uses_central_execution_summary_output(): void
     {
+        config()->set('services.trade_execution.enabled', true);
+        config()->set('services.trade_execution.execution_driver', 'simulated');
+        config()->set('services.trade_execution.dry_run', false);
         config()->set('services.trade_execution.script_path', base_path('tests/Fixtures/does_not_exist.py'));
         config()->set('services.trade_execution.python_executable', 'python');
 

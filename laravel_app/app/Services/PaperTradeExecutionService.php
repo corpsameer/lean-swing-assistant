@@ -17,10 +17,10 @@ class PaperTradeExecutionService
      */
     public function executeForSetup(TradeSetup $tradeSetup, string $symbol): array
     {
-        $isExecutionEnabled = (bool) config('services.trade_execution.enabled', false);
+        $isExecutionEnabled = $this->toBoolean(config('services.trade_execution.enabled', false));
         $brokerMode = strtolower((string) config('services.trade_execution.broker_trading_mode', 'paper'));
         $executionDriver = strtolower((string) config('services.trade_execution.execution_driver', 'ibkr'));
-        $dryRun = (bool) config('services.trade_execution.dry_run', true);
+        $dryRun = $this->toBoolean(config('services.trade_execution.dry_run', true));
 
         if (! in_array($executionDriver, ['simulated', 'ibkr'], true)) {
             $executionDriver = 'simulated';
@@ -205,6 +205,15 @@ class PaperTradeExecutionService
             'message' => $message,
             'order_id' => $orderId,
         ];
+    }
+
+    private function toBoolean(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
     }
 
 
