@@ -184,3 +184,28 @@ Notes:
 - keeps the same Python -> JSON -> Laravel ingestion pattern as daily bars
 - stores one `market_snapshots` row per symbol payload with `snapshot_type=intraday`
 - T09 reads latest intraday snapshot fields including `current_price`, `session_high`, `session_low`, and nullable `intraday_vwap`
+
+
+## Local Admin Authentication (T13.1)
+
+Admin pages are protected with local login-only auth:
+- `/admin/trade-setups`
+- `/admin/orders`
+- `/admin/trades`
+
+There is no public registration route or registration UI. Create users manually via Tinker with hashed passwords:
+
+```bash
+php artisan tinker
+```
+
+```php
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+
+User::create([
+    'name' => 'Sameer',
+    'email' => 'sameer@example.com',
+    'password' => Hash::make('YourStrongPasswordHere'),
+]);
+```
