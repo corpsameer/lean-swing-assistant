@@ -9,8 +9,10 @@
         main { max-width: 1400px; margin: 0 auto; padding: 24px; }
         h1 { margin: 0 0 8px; font-size: 28px; }
         p { margin: 0; color: #4b5563; }
-        nav { margin-top: 12px; display: flex; gap: 12px; }
+        nav { margin-top: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
         nav a { color: #2563eb; text-decoration: none; }
+        .auth-actions { margin-left: auto; }
+        .logout-btn { background: #111827; color: #fff; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
         .panel { margin-top: 20px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
         .empty { padding: 16px; color: #374151; }
         .table-wrap { overflow-x: auto; }
@@ -28,6 +30,10 @@
             <a href="/admin/trade-setups">Trade Setups</a>
             <a href="/admin/orders">Orders</a>
             <a href="/admin/trades">Trades</a>
+            <form class="auth-actions" method="POST" action="/logout">
+                @csrf
+                <button class="logout-btn" type="submit">Logout</button>
+            </form>
         </nav>
 
         @if ($orders->isEmpty())
