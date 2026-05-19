@@ -19,6 +19,9 @@ class SimulateTradeStatusCommand extends Command
     public function handle(): int
     {
         $summary = $this->service->sync();
+        foreach ($summary['debug_lines'] as $line) {
+            $this->line($line);
+        }
 
         $this->line('simulated orders scanned: '.$summary['orders_scanned']);
         $this->line('entered count: '.$summary['entered_count']);
@@ -30,4 +33,3 @@ class SimulateTradeStatusCommand extends Command
         return self::SUCCESS;
     }
 }
-

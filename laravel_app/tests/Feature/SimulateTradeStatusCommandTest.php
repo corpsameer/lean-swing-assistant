@@ -23,6 +23,7 @@ class SimulateTradeStatusCommandTest extends TestCase
         $this->artisan('trades:simulate-status')
             ->expectsOutputToContain('simulated orders scanned: 1')
             ->expectsOutputToContain('entered count: 0')
+            ->expectsOutputToContain('no_change: entry condition not met')
             ->assertExitCode(0);
 
         $order->refresh();
@@ -38,6 +39,7 @@ class SimulateTradeStatusCommandTest extends TestCase
         $this->createIntradaySnapshot($symbol->id, 200.0);
 
         $this->artisan('trades:simulate-status')
+            ->expectsOutputToContain('current_price=200')
             ->expectsOutputToContain('entered count: 1')
             ->assertExitCode(0);
 
@@ -64,7 +66,7 @@ class SimulateTradeStatusCommandTest extends TestCase
 
         $this->assertSame('simulated_tp_hit', $order->status);
         $this->assertSame('closed', $tradeSetup->status);
-        $this->assertSame('target1_hit', $order->meta_json['simulated_exit_reason']);
+        $this->assertSame('target1_hit', $order->meta_json['exit_reason']);
     }
 
     public function test_d_entered_trade_hits_sl_and_closes(): void
@@ -81,7 +83,7 @@ class SimulateTradeStatusCommandTest extends TestCase
 
         $this->assertSame('simulated_sl_hit', $order->status);
         $this->assertSame('closed', $tradeSetup->status);
-        $this->assertSame('stop_loss_hit', $order->meta_json['simulated_exit_reason']);
+        $this->assertSame('stop_loss_hit', $order->meta_json['exit_reason']);
     }
 
     private function createBreakoutPendingSetup(float $entryPrice): array
@@ -186,9 +188,7 @@ class SimulateTradeStatusCommandTest extends TestCase
             'symbol_id' => $symbolId,
             'snapshot_type' => 'intraday',
             'payload_json' => [
-                'symbol_data' => [
-                    'symbol' => 'AAPL',
-                    'status' => 'ok',
+                'metrics' => [
                     'current_price' => $price,
                 ],
             ],
@@ -196,4 +196,3 @@ class SimulateTradeStatusCommandTest extends TestCase
         ]);
     }
 }
-
