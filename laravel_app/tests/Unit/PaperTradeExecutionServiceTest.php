@@ -84,6 +84,32 @@ class PaperTradeExecutionServiceTest extends TestCase
         $this->assertFalse($result['broker_called']);
     }
 
+    public function test_duplicate_active_order_for_trade_setup_is_skipped(): void
+    {
+        config()->set('services.trade_execution.enabled', true);
+        config()->set('services.trade_execution.broker_trading_mode', 'paper');
+        config()->set('services.trade_execution.execution_driver', 'simulated');
+
+        $tradeSetup = $this->createTradeSetup('breakout');
+        Order::query()->create([
+            'trade_setup_id' => $tradeSetup->id,
+            'symbol_id' => $tradeSetup->symbol_id,
+            'order_type' => 'STP LMT',
+            'side' => 'BUY',
+            'quantity' => 1,
+            'limit_price' => 184.5,
+            'stop_price' => 184.5,
+            'status' => 'simulated_pending',
+            'placed_at' => now('UTC'),
+        ]);
+
+        $result = app(PaperTradeExecutionService::class)->executeForSetup($tradeSetup, 'AAPL');
+
+        $this->assertSame(1, Order::query()->count());
+        $this->assertSame('duplicate_skipped', $result['status']);
+        $this->assertFalse($result['order_created']);
+    }
+
     public function test_paper_mode_marks_inactive_parent_as_rejected(): void
     {
         config()->set('services.trade_execution.enabled', true);
