@@ -17,6 +17,37 @@ class PaperTradeExecutionService
      */
     public function executeForSetup(TradeSetup $tradeSetup, string $symbol): array
     {
+        $existingActiveOrder = Order::query()
+            ->where('trade_setup_id', $tradeSetup->id)
+            ->whereIn('status', ['simulated_pending', 'simulated_entered', 'submitted_paper', 'partially_filled_paper', 'inactive_broker'])
+            ->latest('id')
+            ->first();
+
+        if ($existingActiveOrder !== null) {
+            $message = sprintf(
+                'Skipping %s: active setup/order already exists (trade_setup_id=%d, order_id=%d)',
+                strtoupper(trim($symbol)),
+                $tradeSetup->id,
+                $existingActiveOrder->id,
+            );
+            Log::info($message, [
+                'symbol' => strtoupper(trim($symbol)),
+                'trade_setup_id' => $tradeSetup->id,
+                'order_id' => $existingActiveOrder->id,
+                'reason' => 'trade_setup already has active order',
+            ]);
+
+            return $this->buildResult(
+                status: 'duplicate_skipped',
+                orderCreated: false,
+                brokerCalled: false,
+                driver: 'simulated',
+                dryRun: false,
+                message: $message,
+                orderId: null,
+            );
+        }
+
         $isExecutionEnabled = $this->toBoolean(config('services.trade_execution.enabled', false));
         $brokerMode = strtolower((string) config('services.trade_execution.broker_trading_mode', 'paper'));
         $executionDriver = strtolower((string) config('services.trade_execution.execution_driver', 'ibkr'));

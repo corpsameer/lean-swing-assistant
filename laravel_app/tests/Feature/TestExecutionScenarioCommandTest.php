@@ -35,4 +35,25 @@ class TestExecutionScenarioCommandTest extends TestCase
             ->doesntExpectOutputToContain('Order placement script path is missing or invalid')
             ->assertExitCode(0);
     }
+
+    public function test_duplicate_symbol_is_blocked_without_override(): void
+    {
+        config()->set('services.trade_execution.enabled', true);
+        config()->set('services.trade_execution.execution_driver', 'simulated');
+        config()->set('services.trade_execution.dry_run', false);
+
+        $this->artisan('trade:execution-scenario-test', [
+            'scenario' => 'paper',
+            'setup_type' => 'breakout',
+            '--force-paper' => true,
+            '--symbol' => 'AAPL',
+        ])->assertExitCode(0);
+
+        $this->artisan('trade:execution-scenario-test', [
+            'scenario' => 'paper',
+            'setup_type' => 'breakout',
+            '--force-paper' => true,
+            '--symbol' => 'AAPL',
+        ])->expectsOutputToContain('Skipping AAPL: active setup/order already exists')->assertExitCode(0);
+    }
 }

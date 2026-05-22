@@ -7,6 +7,7 @@ use App\Models\Run;
 use App\Models\Symbol;
 use App\Models\TradeSetup;
 use App\Models\WatchlistCandidate;
+use App\Services\ActiveTradeGuardService;
 use App\Services\PaperTradeExecutionService;
 use Illuminate\Console\Command;
 
@@ -20,11 +21,12 @@ class TestExecutionScenarioCommand extends Command
         {--stop=98.00 : Stop price}
         {--target=104.00 : Target1 price}
         {--quantity=1 : Paper order quantity}
-        {--force-paper : Required flag before actual paper transmission}';
+        {--force-paper : Required flag before actual paper transmission}
+        {--allow-duplicate-test : Allow duplicate test setup/order creation for the same symbol}';
 
     protected $description = 'Insert dummy trade setup data and run T11.1 execution in disabled, dry-run, or paper mode.';
 
-    public function handle(PaperTradeExecutionService $executionService): int
+    public function handle(PaperTradeExecutionService $executionService, ActiveTradeGuardService $activeTradeGuardService): int
     {
         $scenario = strtolower((string) $this->argument('scenario'));
         $setupType = strtolower((string) $this->argument('setup_type'));
@@ -79,12 +81,31 @@ class TestExecutionScenarioCommand extends Command
             ]
         );
 
+        $allowDuplicateTest = (bool) $this->option('allow-duplicate-test');
+        if (! $allowDuplicateTest) {
+            $activeGuard = $activeTradeGuardService->findActiveForSymbol($symbol->id);
+            if ($activeGuard['has_active']) {
+                $message = sprintf(
+                    'Skipping %s: active setup/order already exists (trade_setup_id=%s, order_id=%s)',
+                    $symbolText,
+                    $activeGuard['trade_setup_id'] ?? 'null',
+                    $activeGuard['order_id'] ?? 'null',
+                );
+                $this->warn($message);
+
+                return self::SUCCESS;
+            }
+        }
+
         $run = Run::query()->create([
             'run_type' => 'execution_test',
             'status' => 'completed',
             'started_at' => now('UTC'),
             'completed_at' => now('UTC'),
-            'meta_json' => ['scenario' => $scenario],
+            'meta_json' => [
+                'scenario' => $scenario,
+                'allow_duplicate_test' => $allowDuplicateTest,
+            ],
         ]);
 
         $candidate = WatchlistCandidate::query()->create([
@@ -105,7 +126,9 @@ class TestExecutionScenarioCommand extends Command
             'stop_price' => $stopPrice,
             'target1_price' => $targetPrice,
             'target2_price' => $targetPrice + 1,
-            'notes' => 'T11.1 scenario test dummy trade setup',
+            'notes' => $allowDuplicateTest
+                ? 'T11.1 scenario test dummy trade setup | test duplicate override used'
+                : 'T11.1 scenario test dummy trade setup',
         ]);
 
         $this->info('Created dummy trade setup: '.$tradeSetup->id);

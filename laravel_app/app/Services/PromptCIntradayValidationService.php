@@ -10,6 +10,7 @@ use App\Models\WatchlistCandidate;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -18,6 +19,7 @@ class PromptCIntradayValidationService
     public function __construct(
         private readonly OpenAiService $openAiService,
         private readonly PaperTradeExecutionService $paperTradeExecutionService,
+        private readonly ActiveTradeGuardService $activeTradeGuardService,
     ) {}
 
     /**
@@ -134,12 +136,8 @@ class PromptCIntradayValidationService
                     if ($decision === 'enter_now') {
                         $summary['enter_now_count']++;
 
-                        $duplicateExists = TradeSetup::query()
-                            ->where('symbol_id', $candidate->symbol_id)
-                            ->whereIn('status', ['planned', 'open'])
-                            ->exists();
-
-                        if (! $duplicateExists) {
+                        $activeGuard = $this->activeTradeGuardService->findActiveForSymbol($candidate->symbol_id);
+                        if (! $activeGuard['has_active']) {
                             $tradeSetup = TradeSetup::create([
                                 'symbol_id' => $candidate->symbol_id,
                                 'source_candidate_id' => $candidate->id,
@@ -156,6 +154,13 @@ class PromptCIntradayValidationService
                             DB::afterCommit(function () use ($tradeSetup, $symbol): void {
                                 $this->paperTradeExecutionService->executeForSetup($tradeSetup, $symbol);
                             });
+                        } else {
+                            Log::info(sprintf(
+                                'Skipping %s: active setup/order already exists (trade_setup_id=%s, order_id=%s)',
+                                $symbol,
+                                $activeGuard['trade_setup_id'] ?? 'null',
+                                $activeGuard['order_id'] ?? 'null',
+                            ));
                         }
                     }
 
