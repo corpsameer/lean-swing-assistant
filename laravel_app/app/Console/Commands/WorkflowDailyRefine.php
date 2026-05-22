@@ -10,7 +10,7 @@ use Throwable;
 
 class WorkflowDailyRefine extends Command
 {
-    protected $signature = 'workflow:daily-refine';
+    protected $signature = 'workflow:daily-refine {--symbols= : Optional CSV symbol override for manual debugging}';
 
     protected $description = 'Run the daily refine workflow (daily fetch, ingest, metrics, prompt refine)';
 
@@ -19,14 +19,24 @@ class WorkflowDailyRefine extends Command
         $this->info('Starting workflow: daily-refine');
 
         try {
-            $symbols = $dailyFetchService->resolveWorkflowSymbols();
+            $symbolsResolution = $dailyFetchService->resolveWorkflowSymbolsWithSource(
+                $this->option('symbols') !== null ? (string) $this->option('symbols') : null
+            );
+            $symbols = $symbolsResolution['symbols'];
+            if ($symbolsResolution['source'] === 'ibkr_db') {
+                $this->line('Using DB universe symbols: '.count($symbols).' symbols');
+            } elseif ($symbolsResolution['source'] === 'manual_override') {
+                $this->line('Using manual --symbols override: '.count($symbols).' symbols');
+            } else {
+                $this->line('Using fallback WORKFLOW_SYMBOLS: '.count($symbols).' symbols');
+            }
             $this->line('Symbols: '.implode(', ', $symbols));
             $this->line('Python executable: '.$dailyFetchService->resolvePythonExecutable());
             $this->line('Python base path: '.$dailyFetchService->resolvePythonIbkrBasePath());
             $this->line('Snapshot path: '.$dailyFetchService->resolveSnapshotPath());
 
             $this->line('Step 1/4 started: fetch daily bars');
-            $snapshotPath = $dailyFetchService->fetchDailyBarsToDefaultSnapshotPath();
+            $snapshotPath = $dailyFetchService->fetchDailyBarsToDefaultSnapshotPath($symbols);
             $this->line('Step 1/4 completed: snapshot written to '.$snapshotPath);
 
             $successfulFetchCount = $dailyFetchService->countSuccessfulSymbolsFromSnapshot($snapshotPath);
