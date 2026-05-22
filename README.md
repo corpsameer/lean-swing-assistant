@@ -39,6 +39,12 @@ This repository is the **locked v1 foundation** for a lean, local, self-use swin
 
 ---
 
+## Deployment Docs
+
+- VPS scheduler + logging setup: `docs/vps_scheduler_setup.md`
+
+---
+
 ## Environment Contract Overview
 
 Two separate environment files are required and included:

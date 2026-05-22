@@ -261,8 +261,10 @@ Safety notes:
 Do **not** add per-command OS cron entries. Use only one Laravel scheduler cron line:
 
 ```cron
-* * * * * cd /var/www/lean-swing-assistant/laravel_app && php artisan schedule:run >> /dev/null 2>&1
+* * * * * cd /var/www/lean-swing-assistant/laravel_app && php artisan schedule:run >> /var/www/lean-swing-assistant/laravel_app/storage/logs/scheduler-cron.log 2>&1
 ```
+
+For full VPS deployment guidance (cron, logging, permissions, `.env`, and verification), see `../docs/vps_scheduler_setup.md`.
 
 ### Local scheduler checks
 
