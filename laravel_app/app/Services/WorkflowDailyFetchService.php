@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Symbol;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use JsonException;
@@ -62,9 +63,37 @@ class WorkflowDailyFetchService
         return $symbols;
     }
 
-    public function fetchDailyBarsToDefaultSnapshotPath(): string
+    /**
+     * @return array{symbols:array<int,string>,source:string}
+     */
+    public function resolveWeekendSymbolsWithSource(): array
     {
-        $symbols = $this->resolveWorkflowSymbols();
+        $cap = max(1, (int) env('UNIVERSE_MAX_SYMBOLS', 200));
+
+        $ibkrSymbols = Symbol::query()
+            ->where('is_active', true)
+            ->where('sector', 'ibkr_scanner')
+            ->orderBy('symbol')
+            ->limit($cap)
+            ->pluck('symbol')
+            ->map(static fn (string $symbol): string => strtoupper(trim($symbol)))
+            ->filter(static fn (string $symbol): bool => $symbol !== '')
+            ->values()
+            ->all();
+
+        if ($ibkrSymbols !== []) {
+            return ['symbols' => $ibkrSymbols, 'source' => 'ibkr_db'];
+        }
+
+        return ['symbols' => $this->resolveWorkflowSymbols(), 'source' => 'workflow_symbols'];
+    }
+
+    /**
+     * @param  array<int,string>|null  $symbols
+     */
+    public function fetchDailyBarsToDefaultSnapshotPath(?array $symbols = null): string
+    {
+        $symbols ??= $this->resolveWorkflowSymbols();
         $outputPath = $this->resolveSnapshotPath();
         $pythonExecutable = $this->resolvePythonExecutable();
         $resolvedBasePath = $this->resolvePythonIbkrBasePath();

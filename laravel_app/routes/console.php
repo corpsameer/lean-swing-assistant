@@ -16,13 +16,22 @@ Artisan::command('inspire', function () {
 | It does not alter EXECUTION_DRIVER and does not enable live trading.
 */
 
-// Weekend workflow scan (Saturday 09:00 Asia/Kolkata)
+// Weekend workflow scan (Saturday 09:30 Asia/Kolkata)
 Schedule::command('workflow:weekend-scan')
     ->saturdays()
-    ->at('09:00')
+    ->at('09:30')
     ->timezone('Asia/Kolkata')
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler-weekend-scan.log'));
+
+
+// IBKR universe refresh (Friday 14:00 America/New_York)
+Schedule::command('universe:build-ibkr')
+    ->fridays()
+    ->at('14:00')
+    ->timezone('America/New_York')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/scheduler-universe-build.log'));
 
 // Daily refine workflow (US trading weekdays, 08:30 America/New_York)
 Schedule::command('workflow:daily-refine')
