@@ -230,3 +230,48 @@ User::create([
     'password' => Hash::make('YourStrongPasswordHere'),
 ]);
 ```
+
+## Laravel Scheduler Wiring (T14.3)
+
+The app now uses Laravel Scheduler (single scheduler entrypoint) to run automation workflows with explicit timezones and overlap protection.
+
+Configured schedules:
+- `workflow:weekend-scan`
+  - Saturday 09:00 `Asia/Kolkata`
+  - log: `storage/logs/scheduler-weekend-scan.log`
+- `workflow:daily-refine`
+  - Weekdays 08:30 `America/New_York`
+  - log: `storage/logs/scheduler-daily-refine.log`
+- `prompt:intraday-validate`
+  - Weekdays every 5 minutes, between 09:30 and 15:45 `America/New_York`
+  - log: `storage/logs/scheduler-intraday-validate.log`
+- `trades:simulate-status`
+  - Weekdays every 2 minutes, between 09:30 and 16:05 `America/New_York`
+  - Weekdays final run at 16:10 `America/New_York`
+  - log: `storage/logs/scheduler-simulate-status.log`
+
+Safety notes:
+- Scheduler wiring only runs existing commands; it does not add live-trading paths.
+- Execution remains simulated unless existing environment/commands are changed externally.
+- `withoutOverlapping()` is applied on all scheduled commands.
+- Existing duplicate active setup guard continues to protect repeated intraday runs for same symbol.
+
+### VPS cron (single entry)
+
+Do **not** add per-command OS cron entries. Use only one Laravel scheduler cron line:
+
+```cron
+* * * * * cd /var/www/lean-swing-assistant/laravel_app && php artisan schedule:run >> /dev/null 2>&1
+```
+
+### Local scheduler checks
+
+```bash
+php artisan schedule:list
+php artisan schedule:run
+
+php artisan workflow:weekend-scan
+php artisan workflow:daily-refine
+php artisan prompt:intraday-validate
+php artisan trades:simulate-status
+```
