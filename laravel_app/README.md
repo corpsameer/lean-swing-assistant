@@ -185,6 +185,27 @@ Notes:
 - stores one `market_snapshots` row per symbol payload with `snapshot_type=intraday`
 - T09 reads latest intraday snapshot fields including `current_price`, `session_high`, `session_low`, and nullable `intraday_vwap`
 
+## Workflow Wrapper Commands (T14.1)
+
+Run high-level daily/weekend workflows manually:
+
+```bash
+php artisan workflow:weekend-scan
+php artisan workflow:daily-refine
+```
+
+Required `.env` keys:
+- `WORKFLOW_SYMBOLS=AAPL,MSFT,NVDA`
+- `PYTHON_IBKR_BASE_PATH=../python_ibkr`
+- `EXECUTION_PYTHON_EXECUTABLE=python`
+
+Behavior:
+- fetches daily bars from Python into `storage/app/daily_snapshot.json`
+- ingests via `market:ingest-json`
+- computes metrics via `metrics:compute-daily`
+- runs the final stage command (`scan:weekend` + `prompt:weekend-rank`, or `prompt:daily-refine`)
+- stops immediately on critical step failures with non-zero exit code
+
 
 ## Local Admin Authentication (T13.1)
 
