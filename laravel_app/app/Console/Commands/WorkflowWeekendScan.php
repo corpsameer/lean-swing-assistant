@@ -19,14 +19,27 @@ class WorkflowWeekendScan extends Command
         $this->info('Starting workflow: weekend-scan');
 
         try {
-            $symbols = $dailyFetchService->resolveWorkflowSymbols();
+            if ((bool) env('UNIVERSE_AUTO_BUILD_BEFORE_WEEKEND_SCAN', true)) {
+                $this->line('Auto-build enabled: running universe:build-ibkr');
+                if ($this->runArtisanStep('Universe', 'build IBKR universe', 'universe:build-ibkr') === null) {
+                    $this->warn('Universe build failed, weekend workflow will attempt fallback symbol source.');
+                }
+            }
+
+            $symbolResolution = $dailyFetchService->resolveWeekendSymbolsWithSource();
+            $symbols = $symbolResolution['symbols'];
+            if ($symbolResolution['source'] === 'ibkr_db') {
+                $this->line('Using IBKR universe from DB: '.count($symbols).' symbols');
+            } else {
+                $this->line('Using fallback WORKFLOW_SYMBOLS: '.count($symbols).' symbols');
+            }
             $this->line('Symbols: '.implode(', ', $symbols));
             $this->line('Python executable: '.$dailyFetchService->resolvePythonExecutable());
             $this->line('Python base path: '.$dailyFetchService->resolvePythonIbkrBasePath());
             $this->line('Snapshot path: '.$dailyFetchService->resolveSnapshotPath());
 
             $this->line('Step 1/5 started: fetch daily bars');
-            $snapshotPath = $dailyFetchService->fetchDailyBarsToDefaultSnapshotPath();
+            $snapshotPath = $dailyFetchService->fetchDailyBarsToDefaultSnapshotPath($symbols);
             $this->line('Step 1/5 completed: snapshot written to '.$snapshotPath);
 
             $successfulFetchCount = $dailyFetchService->countSuccessfulSymbolsFromSnapshot($snapshotPath);
