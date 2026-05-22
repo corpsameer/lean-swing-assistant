@@ -4,11 +4,40 @@ namespace App\Services;
 
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use JsonException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
 class WorkflowDailyFetchService
 {
+    public function resolvePythonExecutable(): string
+    {
+        $pythonExecutable = trim((string) env('EXECUTION_PYTHON_EXECUTABLE', 'python'));
+
+        if ($pythonExecutable === '') {
+            throw new InvalidArgumentException('EXECUTION_PYTHON_EXECUTABLE is missing. Set it to a valid Python executable (e.g. python or python3).');
+        }
+
+        return $pythonExecutable;
+    }
+
+    public function resolvePythonIbkrBasePath(): string
+    {
+        $pythonBasePath = trim((string) env('PYTHON_IBKR_BASE_PATH', '../python_ibkr'));
+        if ($pythonBasePath === '') {
+            throw new InvalidArgumentException('PYTHON_IBKR_BASE_PATH is missing. Set it to the python_ibkr project path (e.g. ../python_ibkr).');
+        }
+
+        return $this->isAbsolutePath($pythonBasePath)
+            ? $pythonBasePath
+            : base_path($pythonBasePath);
+    }
+
+    public function resolveSnapshotPath(): string
+    {
+        return storage_path('app/daily_snapshot.json');
+    }
+
     /**
      * @return array<int, string>
      */
@@ -36,21 +65,9 @@ class WorkflowDailyFetchService
     public function fetchDailyBarsToDefaultSnapshotPath(): string
     {
         $symbols = $this->resolveWorkflowSymbols();
-        $outputPath = storage_path('app/daily_snapshot.json');
-
-        $pythonExecutable = trim((string) env('EXECUTION_PYTHON_EXECUTABLE', 'python'));
-        if ($pythonExecutable === '') {
-            throw new InvalidArgumentException('EXECUTION_PYTHON_EXECUTABLE is missing. Set it to a valid Python executable (e.g. python or python3).');
-        }
-
-        $pythonBasePath = trim((string) env('PYTHON_IBKR_BASE_PATH', '../python_ibkr'));
-        if ($pythonBasePath === '') {
-            throw new InvalidArgumentException('PYTHON_IBKR_BASE_PATH is missing. Set it to the python_ibkr project path (e.g. ../python_ibkr).');
-        }
-
-        $resolvedBasePath = $this->isAbsolutePath($pythonBasePath)
-            ? $pythonBasePath
-            : base_path($pythonBasePath);
+        $outputPath = $this->resolveSnapshotPath();
+        $pythonExecutable = $this->resolvePythonExecutable();
+        $resolvedBasePath = $this->resolvePythonIbkrBasePath();
 
         $scriptPath = $resolvedBasePath.'/scripts/fetch_daily_bars.py';
 
@@ -76,6 +93,37 @@ class WorkflowDailyFetchService
         }
 
         return $outputPath;
+    }
+
+    public function countSuccessfulSymbolsFromSnapshot(string $snapshotPath): int
+    {
+        if (! is_file($snapshotPath)) {
+            throw new RuntimeException('Snapshot file is missing: '.$snapshotPath);
+        }
+
+        $raw = file_get_contents($snapshotPath);
+        if ($raw === false) {
+            throw new RuntimeException('Unable to read snapshot file: '.$snapshotPath);
+        }
+
+        try {
+            $payload = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new RuntimeException('Snapshot JSON is invalid: '.$exception->getMessage(), 0, $exception);
+        }
+
+        if (! is_array($payload) || ! isset($payload['symbols']) || ! is_array($payload['symbols'])) {
+            throw new RuntimeException('Snapshot JSON does not contain a valid symbols array.');
+        }
+
+        $successCount = 0;
+        foreach ($payload['symbols'] as $symbolPayload) {
+            if (is_array($symbolPayload) && (($symbolPayload['status'] ?? null) === 'ok')) {
+                $successCount++;
+            }
+        }
+
+        return $successCount;
     }
 
     private function isAbsolutePath(string $path): bool

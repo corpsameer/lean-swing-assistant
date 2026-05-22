@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Services\WorkflowDailyFetchService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Throwable;
 
 class WorkflowWeekendScan extends Command
@@ -18,23 +19,58 @@ class WorkflowWeekendScan extends Command
         $this->info('Starting workflow: weekend-scan');
 
         try {
+            $symbols = $dailyFetchService->resolveWorkflowSymbols();
+            $this->line('Symbols: '.implode(', ', $symbols));
+            $this->line('Python executable: '.$dailyFetchService->resolvePythonExecutable());
+            $this->line('Python base path: '.$dailyFetchService->resolvePythonIbkrBasePath());
+            $this->line('Snapshot path: '.$dailyFetchService->resolveSnapshotPath());
+
             $this->line('Step 1/5 started: fetch daily bars');
             $snapshotPath = $dailyFetchService->fetchDailyBarsToDefaultSnapshotPath();
             $this->line('Step 1/5 completed: snapshot written to '.$snapshotPath);
 
-            if (! $this->runArtisanStep('Step 2/5', 'ingest daily snapshot', 'market:ingest-json', ['path' => $snapshotPath])) {
+            $successfulFetchCount = $dailyFetchService->countSuccessfulSymbolsFromSnapshot($snapshotPath);
+            $this->line('Step 1/5 gate: successful symbols fetched = '.$successfulFetchCount);
+            if ($successfulFetchCount <= 0) {
+                $this->warn('Stopping workflow: no successful daily bars fetched.');
+
                 return self::FAILURE;
             }
 
-            if (! $this->runArtisanStep('Step 3/5', 'compute daily metrics', 'metrics:compute-daily')) {
+            $ingestOutput = $this->runArtisanStep('Step 2/5', 'ingest daily snapshot', 'market:ingest-json', ['path' => $snapshotPath]);
+            if ($ingestOutput === null) {
+                return self::FAILURE;
+            }
+            $ingestSuccessCount = $this->extractSummaryCount($ingestOutput, 'success count');
+            if ($ingestSuccessCount <= 0) {
+                $this->warn('Stopping workflow: no successful daily snapshots ingested.');
+
                 return self::FAILURE;
             }
 
-            if (! $this->runArtisanStep('Step 4/5', 'run weekend scan', 'scan:weekend')) {
+            $metricsOutput = $this->runArtisanStep('Step 3/5', 'compute daily metrics', 'metrics:compute-daily');
+            if ($metricsOutput === null) {
+                return self::FAILURE;
+            }
+            $metricsComputed = $this->extractSummaryCount($metricsOutput, 'metrics computed');
+            if ($metricsComputed <= 0) {
+                $this->warn('Stopping workflow: no daily metrics computed.');
+
                 return self::FAILURE;
             }
 
-            if (! $this->runArtisanStep('Step 5/5', 'run Prompt A weekend rank', 'prompt:weekend-rank')) {
+            $scanOutput = $this->runArtisanStep('Step 4/5', 'run weekend scan', 'scan:weekend');
+            if ($scanOutput === null) {
+                return self::FAILURE;
+            }
+            $scanPassed = $this->extractSummaryCount($scanOutput, 'passed');
+            if ($scanPassed <= 0) {
+                $this->warn('Stopping workflow: no new weekend candidates passed filters.');
+
+                return self::SUCCESS;
+            }
+
+            if ($this->runArtisanStep('Step 5/5', 'run Prompt A weekend rank', 'prompt:weekend-rank') === null) {
                 return self::FAILURE;
             }
         } catch (Throwable $throwable) {
@@ -52,21 +88,33 @@ class WorkflowWeekendScan extends Command
     /**
      * @param  array<string, mixed>  $arguments
      */
-    private function runArtisanStep(string $stepLabel, string $stepName, string $command, array $arguments = []): bool
+    private function runArtisanStep(string $stepLabel, string $stepName, string $command, array $arguments = []): ?string
     {
         $this->line($stepLabel.' started: '.$stepName);
 
-        $exitCode = Artisan::call($command, $arguments, $this->output);
+        $buffer = new BufferedOutput;
+        $exitCode = Artisan::call($command, $arguments, $buffer);
+        $output = $buffer->fetch();
+        $this->output->write($output);
 
         if ($exitCode !== 0) {
             $this->error($stepLabel.' failed: '.$stepName.' (exit code '.$exitCode.')');
             $this->error('Workflow failed: weekend-scan');
 
-            return false;
+            return null;
         }
 
         $this->line($stepLabel.' completed: '.$stepName);
 
-        return true;
+        return $output;
+    }
+
+    private function extractSummaryCount(string $output, string $label): int
+    {
+        if (preg_match('/'.preg_quote($label, '/').'\s*:\s*(-?\d+)/i', $output, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return 0;
     }
 }
