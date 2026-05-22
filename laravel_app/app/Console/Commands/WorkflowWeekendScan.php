@@ -10,7 +10,7 @@ use Throwable;
 
 class WorkflowWeekendScan extends Command
 {
-    protected $signature = 'workflow:weekend-scan';
+    protected $signature = 'workflow:weekend-scan {--symbols= : Optional CSV symbol override for manual debugging}';
 
     protected $description = 'Run the full weekend discovery workflow (daily fetch, ingest, metrics, scan, prompt rank)';
 
@@ -26,10 +26,14 @@ class WorkflowWeekendScan extends Command
                 }
             }
 
-            $symbolResolution = $dailyFetchService->resolveWeekendSymbolsWithSource();
+            $symbolResolution = $dailyFetchService->resolveWorkflowSymbolsWithSource(
+                $this->option('symbols') !== null ? (string) $this->option('symbols') : null
+            );
             $symbols = $symbolResolution['symbols'];
             if ($symbolResolution['source'] === 'ibkr_db') {
-                $this->line('Using IBKR universe from DB: '.count($symbols).' symbols');
+                $this->line('Using DB universe symbols: '.count($symbols).' symbols');
+            } elseif ($symbolResolution['source'] === 'manual_override') {
+                $this->line('Using manual --symbols override: '.count($symbols).' symbols');
             } else {
                 $this->line('Using fallback WORKFLOW_SYMBOLS: '.count($symbols).' symbols');
             }

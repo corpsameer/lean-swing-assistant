@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Symbol;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use JsonException;
@@ -50,30 +51,37 @@ class WorkflowDailyFetchService
             throw new InvalidArgumentException('WORKFLOW_SYMBOLS is missing. Add a comma-separated list, e.g. WORKFLOW_SYMBOLS=AAPL,MSFT,NVDA');
         }
 
-        $symbols = collect(explode(',', $rawSymbols))
-            ->map(static fn (string $symbol): string => strtoupper(trim($symbol)))
-            ->filter(static fn (string $symbol): bool => $symbol !== '')
-            ->values()
-            ->all();
-
-        if ($symbols === []) {
-            throw new InvalidArgumentException('WORKFLOW_SYMBOLS is empty after parsing. Add at least one symbol.');
-        }
-
-        return $symbols;
+        return $this->parseSymbolsCsv($rawSymbols, 'WORKFLOW_SYMBOLS');
     }
 
     /**
      * @return array{symbols:array<int,string>,source:string}
      */
-    public function resolveWeekendSymbolsWithSource(): array
+    public function resolveWorkflowSymbolsWithSource(?string $overrideSymbols = null, bool $forceWorkflowSymbolsFallback = false): array
     {
+        if ($overrideSymbols !== null) {
+            $symbols = $this->parseSymbolsCsv($overrideSymbols, '--symbols override');
+
+            return ['symbols' => $symbols, 'source' => 'manual_override'];
+        }
+
+        if ($forceWorkflowSymbolsFallback) {
+            return ['symbols' => $this->resolveWorkflowSymbols(), 'source' => 'workflow_symbols'];
+        }
+
         $cap = max(1, (int) env('UNIVERSE_MAX_SYMBOLS', 200));
 
-        $ibkrSymbols = Symbol::query()
+        $symbolQuery = Symbol::query()
             ->where('is_active', true)
-            ->where('sector', 'ibkr_scanner')
-            ->orderBy('symbol')
+            ->where('sector', 'ibkr_scanner');
+
+        if (Schema::hasColumn('symbols', 'last_seen_at')) {
+            $symbolQuery->orderByDesc('last_seen_at')->orderBy('symbol');
+        } else {
+            $symbolQuery->orderBy('symbol');
+        }
+
+        $ibkrSymbols = $symbolQuery
             ->limit($cap)
             ->pluck('symbol')
             ->map(static fn (string $symbol): string => strtoupper(trim($symbol)))
@@ -153,6 +161,24 @@ class WorkflowDailyFetchService
         }
 
         return $successCount;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function parseSymbolsCsv(string $rawSymbols, string $sourceLabel): array
+    {
+        $symbols = collect(explode(',', $rawSymbols))
+            ->map(static fn (string $symbol): string => strtoupper(trim($symbol)))
+            ->filter(static fn (string $symbol): bool => $symbol !== '')
+            ->values()
+            ->all();
+
+        if ($symbols === []) {
+            throw new InvalidArgumentException($sourceLabel.' is empty after parsing. Add at least one symbol.');
+        }
+
+        return $symbols;
     }
 
     private function isAbsolutePath(string $path): bool
