@@ -28,10 +28,10 @@
         <h1>Trade Setups</h1>
         <p>Read-only visibility of generated trade setups.</p>
         <nav>
-            <a href="/admin/trade-setups">Trade Setups</a>
-            <a href="/admin/orders">Orders</a>
-            <a href="/admin/trades">Trades</a>
-            <form class="auth-actions" method="POST" action="/logout">
+            <a href="{{ url('/admin/trade-setups') }}">Trade Setups</a>
+            <a href="{{ url('/admin/orders') }}">Orders</a>
+            <a href="{{ url('/admin/trades') }}">Trades</a>
+            <form class="auth-actions" method="POST" action="{{ url('/logout') }}">
                 @csrf
                 <button class="logout-btn" type="submit">Logout</button>
             </form>

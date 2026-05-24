@@ -12,7 +12,7 @@ class AuthController extends Controller
     public function showLoginForm(): View|RedirectResponse
     {
         if (Auth::check()) {
-            return redirect('/admin/trade-setups');
+            return redirect(url('/admin/trade-setups'));
         }
 
         return view('auth.login');
@@ -28,7 +28,7 @@ class AuthController extends Controller
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
 
-            return redirect()->intended('/admin/trade-setups');
+            return redirect()->intended(url('/admin/trade-setups'));
         }
 
         return back()
@@ -45,6 +45,6 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect('/login');
+        return redirect(url('/login'));
     }
 }

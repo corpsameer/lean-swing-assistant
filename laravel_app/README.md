@@ -207,6 +207,10 @@ Behavior:
 - stops immediately on critical step failures with non-zero exit code
 
 
+## Subdirectory Deployment Note
+
+For subdirectory deployments, set `APP_URL` to the full base URL including the subdirectory (example: `APP_URL=https://gainforge.in/usstocksmonthly`). URL generation via Laravel helpers then keeps login, logout, navigation links, and redirects inside that subdirectory.
+
 ## Local Admin Authentication (T13.1)
 
 Admin pages are protected with local login-only auth:

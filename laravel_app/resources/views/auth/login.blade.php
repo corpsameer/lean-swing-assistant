@@ -20,7 +20,7 @@
         <h1>Login</h1>
         <p>Sign in to access admin pages.</p>
 
-        <form method="POST" action="/login">
+        <form method="POST" action="{{ url('/login') }}">
             @csrf
             <label for="email">Email</label>
             <input id="email" type="email" name="email" value="{{ old('email') }}" required autofocus>
