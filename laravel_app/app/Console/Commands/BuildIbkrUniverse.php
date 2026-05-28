@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Symbol;
 use App\Services\WorkflowDailyFetchService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Schema;
 use JsonException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
@@ -13,7 +14,7 @@ class BuildIbkrUniverse extends Command
 {
     protected $signature = 'universe:build-ibkr';
 
-    protected $description = 'Build active symbol universe from IBKR scanner results';
+    protected $description = 'Build symbol universe from IBKR scanner results';
 
     public function handle(WorkflowDailyFetchService $fetchService): int
     {
@@ -53,7 +54,7 @@ class BuildIbkrUniverse extends Command
 
         $inserted = 0;
         $updated = 0;
-        $activeSymbols = [];
+        $seenSymbols = [];
 
         foreach ($symbols as $row) {
             if (! is_array($row)) {
@@ -63,25 +64,40 @@ class BuildIbkrUniverse extends Command
             if ($symbol === '') {
                 continue;
             }
-            $activeSymbols[] = $symbol;
+            $seenSymbols[] = $symbol;
+
+            $updates = [
+                'company_name' => $row['name'] ?? null,
+                'exchange' => $row['exchange'] ?? null,
+                'sector' => 'ibkr_scanner',
+                'is_active' => true,
+            ];
+
+            if (Schema::hasColumn('symbols', 'source')) {
+                $updates['source'] = (string) ($row['source'] ?? 'ibkr_scanner');
+            }
+
+            if (Schema::hasColumn('symbols', 'source_type')) {
+                $updates['source_type'] = (string) ($row['source_type'] ?? 'scanner');
+            }
+
+            if (Schema::hasColumn('symbols', 'last_seen_at')) {
+                $updates['last_seen_at'] = now();
+            }
+
+            if (Schema::hasColumn('symbols', 'scanner_metadata')) {
+                $updates['scanner_metadata'] = json_encode([
+                    'scanner_code' => $row['scanner_code'] ?? null,
+                    'raw' => $row,
+                ], JSON_UNESCAPED_SLASHES);
+            }
 
             $existing = Symbol::query()->where('symbol', $symbol)->first();
             if ($existing === null) {
-                Symbol::query()->create([
-                    'symbol' => $symbol,
-                    'company_name' => $row['name'] ?? null,
-                    'exchange' => $row['exchange'] ?? null,
-                    'sector' => 'ibkr_scanner',
-                    'is_active' => true,
-                ]);
+                Symbol::query()->create(array_merge(['symbol' => $symbol], $updates));
                 $inserted++;
             } else {
-                $existing->fill([
-                    'company_name' => $row['name'] ?? $existing->company_name,
-                    'exchange' => $row['exchange'] ?? $existing->exchange,
-                    'sector' => 'ibkr_scanner',
-                    'is_active' => true,
-                ]);
+                $existing->fill($updates);
                 if ($existing->isDirty()) {
                     $existing->save();
                     $updated++;
@@ -89,14 +105,7 @@ class BuildIbkrUniverse extends Command
             }
         }
 
-        if ($activeSymbols !== []) {
-            Symbol::query()
-                ->where('sector', 'ibkr_scanner')
-                ->whereNotIn('symbol', $activeSymbols)
-                ->update(['is_active' => false]);
-        }
-
-        $unique = count(array_unique($activeSymbols));
+        $unique = count(array_unique($seenSymbols));
         $this->line('Scanner codes: '.implode(', ', $scannerCodes));
         $this->line('Raw symbols returned: '.count($symbols));
         $this->line('Unique symbols: '.$unique);

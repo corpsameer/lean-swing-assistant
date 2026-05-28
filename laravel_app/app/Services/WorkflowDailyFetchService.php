@@ -70,10 +70,37 @@ class WorkflowDailyFetchService
         }
 
         $cap = max(1, (int) env('UNIVERSE_MAX_SYMBOLS', 200));
+        $recentDays = max(1, (int) env('UNIVERSE_RECENT_DAYS', 14));
+        $hasLastSeenAt = Schema::hasColumn('symbols', 'last_seen_at');
 
-        $symbolQuery = Symbol::query()
-            ->where('is_active', true)
-            ->where('sector', 'ibkr_scanner');
+        if ($hasLastSeenAt) {
+            $recentSymbols = $this->queryActiveSymbols($cap, function ($query) use ($recentDays) {
+                $query->where('last_seen_at', '>=', now()->subDays($recentDays));
+            });
+            if ($recentSymbols !== []) {
+                return ['symbols' => $recentSymbols, 'source' => sprintf('ibkr_db_recent_%dd', $recentDays)];
+            }
+        }
+
+        $ibkrSymbols = $this->queryActiveSymbols($cap);
+        if ($ibkrSymbols !== []) {
+            return ['symbols' => $ibkrSymbols, 'source' => 'ibkr_db'];
+        }
+
+        return ['symbols' => $this->resolveWorkflowSymbols(), 'source' => 'workflow_symbols'];
+    }
+
+    /**
+     * @param  null|callable(\Illuminate\Database\Eloquent\Builder):void  $scope
+     * @return array<int, string>
+     */
+    private function queryActiveSymbols(int $cap, ?callable $scope = null): array
+    {
+        $symbolQuery = Symbol::query()->where('is_active', true);
+
+        if ($scope !== null) {
+            $scope($symbolQuery);
+        }
 
         if (Schema::hasColumn('symbols', 'last_seen_at')) {
             $symbolQuery->orderByDesc('last_seen_at')->orderBy('symbol');
@@ -81,19 +108,13 @@ class WorkflowDailyFetchService
             $symbolQuery->orderBy('symbol');
         }
 
-        $ibkrSymbols = $symbolQuery
+        return $symbolQuery
             ->limit($cap)
             ->pluck('symbol')
             ->map(static fn (string $symbol): string => strtoupper(trim($symbol)))
             ->filter(static fn (string $symbol): bool => $symbol !== '')
             ->values()
             ->all();
-
-        if ($ibkrSymbols !== []) {
-            return ['symbols' => $ibkrSymbols, 'source' => 'ibkr_db'];
-        }
-
-        return ['symbols' => $this->resolveWorkflowSymbols(), 'source' => 'workflow_symbols'];
     }
 
     /**
