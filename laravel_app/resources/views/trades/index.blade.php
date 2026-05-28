@@ -27,6 +27,8 @@
         .badge-red { background: #fee2e2; color: #991b1b; }
         .badge-orange { background: #ffedd5; color: #9a3412; }
         .badge-dark { background: #d1d5db; color: #111827; }
+        .text-green { color: #166534; font-weight: 600; }
+        .text-red { color: #991b1b; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -76,6 +78,11 @@
                             <th>Simulated Entry Price</th>
                             <th>Simulated Exit Price</th>
                             <th>Exit Reason</th>
+                            <th>PnL %</th>
+                            <th>PnL Amount</th>
+                            <th>R Multiple</th>
+                            <th>Entered At</th>
+                            <th>Closed At</th>
                             <th>Placed At</th>
                             <th>Filled At</th>
                         </tr>
@@ -89,6 +96,11 @@
                                 $simEntry = $meta['simulated_entry_price'] ?? '—';
                                 $simExit = $meta['simulated_exit_price'] ?? '—';
                                 $exitReason = $meta['exit_reason'] ?? $meta['normalized_reason'] ?? $meta['execution_note'] ?? '—';
+                                $pnlPercent = $meta['pnl_percent'] ?? null;
+                                $pnlAmount = $meta['pnl_amount'] ?? null;
+                                $rMultiple = $meta['r_multiple'] ?? null;
+                                $enteredAt = $meta['simulated_entered_at'] ?? '—';
+                                $closedAt = $meta['simulated_closed_at'] ?? '—';
                             @endphp
                             <tr>
                                 <td class="nowrap">{{ $setup->id }}</td>
@@ -103,6 +115,11 @@
                                 <td class="nowrap">{{ $simEntry }}</td>
                                 <td class="nowrap">{{ $simExit }}</td>
                                 <td>{{ $exitReason }}</td>
+                                <td class="nowrap {{ is_numeric($pnlPercent) ? ((float) $pnlPercent >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($pnlPercent) ? number_format((float) $pnlPercent, 2) : '—' }}</td>
+                                <td class="nowrap {{ is_numeric($pnlAmount) ? ((float) $pnlAmount >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($pnlAmount) ? number_format((float) $pnlAmount, 2) : '—' }}</td>
+                                <td class="nowrap {{ is_numeric($rMultiple) ? ((float) $rMultiple >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($rMultiple) ? number_format((float) $rMultiple, 2) : '—' }}</td>
+                                <td class="nowrap">{{ $enteredAt }}</td>
+                                <td class="nowrap">{{ $closedAt }}</td>
                                 <td class="nowrap">{{ $latestOrder?->placed_at?->toDateTimeString() ?? '—' }}</td>
                                 <td class="nowrap">{{ $latestOrder?->filled_at?->toDateTimeString() ?? '—' }}</td>
                             </tr>
