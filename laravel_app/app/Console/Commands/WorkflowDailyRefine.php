@@ -53,6 +53,15 @@ class WorkflowDailyRefine extends Command
                 return self::FAILURE;
             }
 
+            if ($fetchResult['partial']) {
+                $this->warn(sprintf(
+                    'Continuing with partial daily data: valid=%d failed_batches=%d failed_symbols=%d',
+                    $fetchResult['valid_symbols'],
+                    $fetchResult['failed_batches'],
+                    $fetchResult['failed_symbols']
+                ));
+            }
+
             $this->line('Continuing workflow...');
 
             $ingestOutput = $this->runArtisanStep('Step 2/4', 'ingest daily snapshot', 'market:ingest-json', ['path' => $snapshotPath]);
