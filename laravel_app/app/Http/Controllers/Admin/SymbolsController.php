@@ -3,23 +3,22 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\AdminTableControls;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class SymbolsController extends Controller
 {
+    use AdminTableControls;
     public function index(Request $request)
     {
         $table = 'symbols';
         $columns = Schema::getColumnListing($table);
         $has = fn (string $column): bool => in_array($column, $columns, true);
 
-        $pageSizes = [10, 25, 50, 100, 200];
-        $pageSize = (int) $request->query('page_size', 25);
-        if (! in_array($pageSize, $pageSizes, true)) {
-            $pageSize = 25;
-        }
+        $pageSizes = $this->pageSizes();
+        $pageSize = $this->getPageSize($request);
 
         $symbol = trim((string) $request->query('symbol', ''));
         $active = (string) $request->query('active', 'all');
@@ -52,10 +51,28 @@ class SymbolsController extends Controller
             $query->whereDate('last_seen_at', '>=', $lastSeenFrom);
         }
 
-        if ($has('symbol')) {
-            $query->orderBy('symbol');
-        } else {
-            $query->orderByDesc('id');
+        $allowedSorts = ['id' => 'id'];
+        foreach ([
+            'symbol' => 'symbol',
+            'name' => $has('company_name') ? 'company_name' : ($has('security_name') ? 'security_name' : null),
+            'exchange' => $has('exchange') ? 'exchange' : null,
+            'source' => $has('source') ? 'source' : null,
+            'is_active' => $has('is_active') ? 'is_active' : null,
+            'last_seen_at' => $has('last_seen_at') ? 'last_seen_at' : null,
+            'created_at' => $has('created_at') ? 'created_at' : null,
+            'updated_at' => $has('updated_at') ? 'updated_at' : null,
+        ] as $key => $column) {
+            if ($column !== null) {
+                $allowedSorts[$key] = $column;
+            }
+        }
+        $defaultSort = $has('symbol') ? 'symbol' : 'id';
+        $defaultDirection = $has('symbol') ? 'asc' : 'desc';
+        [$currentSort, $currentDirection, $sortColumn] = $this->getSort($request, $allowedSorts, $defaultSort, $defaultDirection);
+
+        $query->orderBy($sortColumn, $currentDirection);
+        if ($sortColumn !== 'id' && $has('id')) {
+            $query->orderBy('id');
         }
 
         $rows = $query->paginate($pageSize)->appends($request->query());
@@ -75,6 +92,8 @@ class SymbolsController extends Controller
             'pageSizes' => $pageSizes,
             'stats' => $stats,
             'filters' => compact('symbol', 'active', 'source', 'exchange', 'lastSeenFrom', 'pageSize'),
+            'currentSort' => $currentSort,
+            'currentDirection' => $currentDirection,
             'sources' => $has('source') ? DB::table($table)->whereNotNull('source')->distinct()->orderBy('source')->pluck('source') : collect(),
             'exchanges' => $has('exchange') ? DB::table($table)->whereNotNull('exchange')->distinct()->orderBy('exchange')->pluck('exchange') : collect(),
         ]);
