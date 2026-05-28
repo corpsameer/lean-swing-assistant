@@ -69,7 +69,7 @@ class AnalyticsController extends Controller
         ];
 
         $calcGroup = function ($items, $key, $withTotal = false) use ($isWin, $isLoss) {
-            return $items->groupBy(fn ($r) => $r[$key] ?: '—')->map(function ($g, $name) use ($isWin, $isLoss, $withTotal) {
+            return $items->groupBy(fn ($r) => $r[$key] ?: '—')->map(function ($g, $name) use ($isWin, $isLoss, $withTotal, $key) {
                 $wins = $g->filter($isWin)->count(); $losses = $g->filter($isLoss)->count();
                 $row = [$key => $name, 'total' => $g->count(), 'wins' => $wins, 'losses' => $losses,
                     'win_rate' => $g->count() ? ($wins / $g->count()) * 100 : 0,
