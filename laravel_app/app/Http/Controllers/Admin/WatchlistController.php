@@ -3,23 +3,22 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\AdminTableControls;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class WatchlistController extends Controller
 {
+    use AdminTableControls;
     public function index(Request $request)
     {
         $table = 'watchlist_candidates';
         $columns = Schema::getColumnListing($table);
         $has = fn (string $column): bool => in_array($column, $columns, true);
 
-        $pageSizes = [10, 25, 50, 100, 200];
-        $pageSize = (int) $request->query('page_size', 25);
-        if (! in_array($pageSize, $pageSizes, true)) {
-            $pageSize = 25;
-        }
+        $pageSizes = $this->pageSizes();
+        $pageSize = $this->getPageSize($request);
 
         $symbol = trim((string) $request->query('symbol', ''));
         $status = trim((string) $request->query('status', ''));
@@ -59,11 +58,27 @@ class WatchlistController extends Controller
             $query->whereDate('watchlist_candidates.created_at', '<=', $dateTo);
         }
 
-        if ($has('created_at')) {
-            $query->orderByDesc('watchlist_candidates.created_at');
-        } else {
-            $query->orderByDesc('watchlist_candidates.id');
+        $allowedSorts = [
+            'id' => 'watchlist_candidates.id',
+            'symbol' => 'symbols.symbol',
+        ];
+        foreach ([
+            'status' => $has('status') ? 'watchlist_candidates.status' : null,
+            'candidate_stage' => $has('stage') ? 'watchlist_candidates.stage' : null,
+            'score_total' => $has('score_total') ? 'watchlist_candidates.score_total' : null,
+            'confidence' => $has('confidence') ? 'watchlist_candidates.confidence' : null,
+            'setup_type' => $has('setup_type') ? 'watchlist_candidates.setup_type' : null,
+            'created_at' => $has('created_at') ? 'watchlist_candidates.created_at' : null,
+            'updated_at' => $has('updated_at') ? 'watchlist_candidates.updated_at' : null,
+        ] as $key => $column) {
+            if ($column !== null) {
+                $allowedSorts[$key] = $column;
+            }
         }
+        $defaultSort = $has('score_total') ? 'score_total' : 'id';
+        [$currentSort, $currentDirection, $sortColumn] = $this->getSort($request, $allowedSorts, $defaultSort, 'desc');
+
+        $query->orderBy($sortColumn, $currentDirection)->orderByDesc('watchlist_candidates.id');
 
         $rows = $query->paginate($pageSize)->appends($request->query());
 
@@ -82,6 +97,8 @@ class WatchlistController extends Controller
             'pageSizes' => $pageSizes,
             'stats' => $stats,
             'filters' => compact('symbol', 'status', 'setupType', 'stage', 'minScore', 'dateFrom', 'dateTo', 'pageSize'),
+            'currentSort' => $currentSort,
+            'currentDirection' => $currentDirection,
             'statuses' => $has('status') ? DB::table($table)->whereNotNull('status')->distinct()->orderBy('status')->pluck('status') : collect(),
             'setupTypes' => $has('setup_type') ? DB::table($table)->whereNotNull('setup_type')->distinct()->orderBy('setup_type')->pluck('setup_type') : collect(),
             'stages' => $has('stage') ? DB::table($table)->whereNotNull('stage')->distinct()->orderBy('stage')->pluck('stage') : collect(),

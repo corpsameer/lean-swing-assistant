@@ -1,115 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orders</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
-        main { max-width: 1400px; margin: 0 auto; padding: 24px; }
-        h1 { margin: 0 0 8px; font-size: 28px; }
-        p { margin: 0; color: #4b5563; }
-        nav { margin-top: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-        nav a { color: #2563eb; text-decoration: none; }
-        .auth-actions { margin-left: auto; }
-        .logout-btn { background: #111827; color: #fff; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-        .panel { margin-top: 20px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
-        .empty { padding: 16px; color: #374151; }
-        .table-wrap { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th, td { text-align: left; border-bottom: 1px solid #e5e7eb; padding: 8px 10px; vertical-align: top; }
-        th { background: #f9fafb; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; white-space: nowrap; }
-        .nowrap { white-space: nowrap; }
-        .text-green { color: #166534; font-weight: 600; }
-        .text-red { color: #991b1b; font-weight: 600; }
-    </style>
-</head>
-<body>
-    <main>
-        <h1>Orders</h1>
-        <p>Read-only visibility of all order records.</p>
-        <nav>
-            <a href="{{ url('/admin/trade-setups') }}">Trade Setups</a>
-            <a href="{{ url('/admin/orders') }}">Orders</a>
-            <a href="{{ url('/admin/trades') }}">Trades</a>
-            <a href="{{ url('/admin/analytics') }}">Analytics</a>
-            <a href="{{ url('/admin/symbols') }}">Symbols</a>
-            <a href="{{ url('/admin/watchlist') }}">Watchlist</a>
-            <form class="auth-actions" method="POST" action="{{ url('/logout') }}">
-                @csrf
-                <button class="logout-btn" type="submit">Logout</button>
-            </form>
-        </nav>
-
-        @if ($orders->isEmpty())
-            <div class="panel empty">No orders found yet.</div>
-        @else
-            <div class="panel table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Order ID</th>
-                            <th>Symbol</th>
-                            <th>Trade Setup ID</th>
-                            <th>Execution Driver</th>
-                            <th>Order Status</th>
-                            <th>Side</th>
-                            <th>Order Type</th>
-                            <th>Quantity</th>
-                            <th>Limit Price</th>
-                            <th>Stop Price</th>
-                            <th>Broker Order ID</th>
-                            <th>Placed At</th>
-                            <th>Filled At</th>
-                            <th>Exit Reason</th>
-                            <th>PnL %</th>
-                            <th>R Multiple</th>
-                            <th>Key Notes / Reason</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($orders as $order)
-                            @php
-                                $meta = $order->meta_json ?? [];
-                                $executionDriver = $meta['execution_driver'] ?? null;
-                                if (! $executionDriver && $order->broker_order_id) {
-                                    $executionDriver = 'ibkr';
-                                }
-
-                                $keyReason = $meta['exit_reason']
-                                    ?? $meta['normalized_reason']
-                                    ?? $meta['execution_note']
-                                    ?? $meta['note']
-                                    ?? $meta['message']
-                                    ?? '—';
-                                $pnlPercent = $meta['pnl_percent'] ?? null;
-                                $rMultiple = $meta['r_multiple'] ?? null;
-                                $exitReason = $meta['exit_reason'] ?? '—';
-                            @endphp
-                            <tr>
-                                <td class="nowrap">{{ $order->id }}</td>
-                                <td class="nowrap">{{ $order->symbol?->symbol ?? ($order->symbol_id ? 'ID '.$order->symbol_id : '—') }}</td>
-                                <td class="nowrap">{{ $order->trade_setup_id ?? '—' }}</td>
-                                <td class="nowrap">{{ $executionDriver ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->status ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->side ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->order_type ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->quantity ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->limit_price ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->stop_price ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->broker_order_id ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->placed_at?->toDateTimeString() ?? '—' }}</td>
-                                <td class="nowrap">{{ $order->filled_at?->toDateTimeString() ?? '—' }}</td>
-                                <td>{{ $exitReason }}</td>
-                                <td class="nowrap {{ is_numeric($pnlPercent) ? ((float) $pnlPercent >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($pnlPercent) ? number_format((float) $pnlPercent, 2) : '—' }}</td>
-                                <td class="nowrap {{ is_numeric($rMultiple) ? ((float) $rMultiple >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($rMultiple) ? number_format((float) $rMultiple, 2) : '—' }}</td>
-                                <td>{{ $keyReason }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        @endif
-    </main>
-</body>
-</html>
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Orders</title>
+<style>body{font-family:Arial,sans-serif;margin:0;background:#f3f4f6;color:#111827}main{max-width:1500px;margin:0 auto;padding:24px}h1{margin:0 0 8px;font-size:28px}p{margin:0;color:#4b5563}nav{margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}nav a{color:#2563eb;text-decoration:none}.auth-actions{margin-left:auto}.logout-btn{background:#111827;color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer}.panel{margin-top:20px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px}.table-wrap{overflow-x:auto;padding:0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;border-bottom:1px solid #e5e7eb;padding:8px 10px;vertical-align:top}th{background:#f9fafb;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#6b7280;white-space:nowrap}.sort-link{color:#2563eb;text-decoration:none}.nowrap{white-space:nowrap}.text-green{color:#166534;font-weight:600}.text-red{color:#991b1b;font-weight:600}.filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.filters label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#4b5563}.filters input,.filters select{min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px}.filters button,.filters a{padding:7px 10px;border-radius:6px}.filters button{border:0;background:#2563eb;color:#fff}.pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px}.pagination-summary{color:#4b5563;font-size:14px}.pagination-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.pagination-link{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;color:#2563eb;text-decoration:none;font-size:14px}.pagination-link.active{background:#2563eb;border-color:#2563eb;color:#fff;font-weight:700}.pagination-link.disabled{background:#f3f4f6;color:#9ca3af}.pagination-ellipsis{padding:0 4px;color:#6b7280}</style></head><body><main>
+<h1>Orders</h1><p>Read-only visibility of all order records.</p>
+<nav><a href="{{ url('/admin/trade-setups') }}">Trade Setups</a><a href="{{ url('/admin/orders') }}">Orders</a><a href="{{ url('/admin/trades') }}">Trades</a><a href="{{ url('/admin/analytics') }}">Analytics</a><a href="{{ url('/admin/symbols') }}">Symbols</a><a href="{{ url('/admin/watchlist') }}">Watchlist</a><form class="auth-actions" method="POST" action="{{ url('/logout') }}">@csrf<button class="logout-btn" type="submit">Logout</button></form></nav>
+<div class="panel"><form class="filters" method="GET" action="{{ url('/admin/orders') }}"><label>Symbol <input name="symbol" value="{{ $filters['symbol'] }}"></label><label>Status <select name="status"><option value="">All</option>@foreach($statuses as $v)<option value="{{ $v }}" @selected($filters['status']===$v)>{{ $v }}</option>@endforeach</select></label><label>Execution Driver <select name="execution_driver"><option value="">All</option>@foreach($executionDrivers as $v)<option value="{{ $v }}" @selected($filters['executionDriver']===$v)>{{ $v }}</option>@endforeach</select></label><label>Side <select name="side"><option value="">All</option>@foreach($sides as $v)<option value="{{ $v }}" @selected($filters['side']===$v)>{{ $v }}</option>@endforeach</select></label><label>Order Type <select name="order_type"><option value="">All</option>@foreach($orderTypes as $v)<option value="{{ $v }}" @selected($filters['orderType']===$v)>{{ $v }}</option>@endforeach</select></label><label>From <input type="date" name="date_from" value="{{ $filters['dateFrom'] }}"></label><label>To <input type="date" name="date_to" value="{{ $filters['dateTo'] }}"></label><label>Has PnL <select name="has_pnl"><option value="all" @selected($filters['hasPnl']==='all')>All</option><option value="yes" @selected($filters['hasPnl']==='yes')>Yes</option><option value="no" @selected($filters['hasPnl']==='no')>No</option></select></label><label>Exit Reason <input name="exit_reason" value="{{ $filters['exitReason'] }}"></label><label>Page Size <select name="page_size">@foreach($pageSizes as $s)<option value="{{ $s }}" @selected($filters['pageSize']===$s)>{{ $s }}</option>@endforeach</select></label><button type="submit">Apply</button><a href="{{ url('/admin/orders') }}">Reset</a></form></div>
+<div class="panel table-wrap"><table><thead><tr>@include('components.sortable-th',['label'=>'Order ID','sort'=>'id'])@include('components.sortable-th',['label'=>'Symbol','sort'=>'symbol'])@include('components.sortable-th',['label'=>'Trade Setup ID','sort'=>'trade_setup_id'])<th>Execution Driver</th>@include('components.sortable-th',['label'=>'Order Status','sort'=>'status'])@include('components.sortable-th',['label'=>'Side','sort'=>'side'])@include('components.sortable-th',['label'=>'Order Type','sort'=>'order_type'])@include('components.sortable-th',['label'=>'Quantity','sort'=>'quantity'])@include('components.sortable-th',['label'=>'Limit Price','sort'=>'limit_price'])@include('components.sortable-th',['label'=>'Stop Price','sort'=>'stop_price'])<th>Broker Order ID</th>@include('components.sortable-th',['label'=>'Placed At','sort'=>'placed_at'])@include('components.sortable-th',['label'=>'Filled At','sort'=>'filled_at'])<th>Exit Reason</th><th>PnL %</th><th>PnL Amount</th><th>R Multiple</th><th>Key Notes / Reason</th></tr></thead><tbody>
+@forelse ($orders as $order)
+@php($meta = $order->meta_json ?? [])@php($executionDriver = $meta['execution_driver'] ?? ($order->broker_order_id ? 'ibkr' : null))@php($keyReason = $meta['exit_reason'] ?? $meta['normalized_reason'] ?? $meta['execution_note'] ?? $meta['note'] ?? $meta['message'] ?? '—')@php($pnlPercent = $meta['pnl_percent'] ?? null)@php($pnlAmount = $meta['pnl_amount'] ?? null)@php($rMultiple = $meta['r_multiple'] ?? null)@php($exitReason = $meta['exit_reason'] ?? '—')
+<tr><td class="nowrap">{{ $order->id }}</td><td class="nowrap">{{ $order->symbol?->symbol ?? ($order->symbol_id ? 'ID '.$order->symbol_id : '—') }}</td><td class="nowrap">{{ $order->trade_setup_id ?? '—' }}</td><td class="nowrap">{{ $executionDriver ?? '—' }}</td><td class="nowrap">{{ $order->status ?? '—' }}</td><td class="nowrap">{{ $order->side ?? '—' }}</td><td class="nowrap">{{ $order->order_type ?? '—' }}</td><td class="nowrap">{{ $order->quantity ?? '—' }}</td><td class="nowrap">{{ $order->limit_price ?? '—' }}</td><td class="nowrap">{{ $order->stop_price ?? '—' }}</td><td class="nowrap">{{ $order->broker_order_id ?? '—' }}</td><td class="nowrap">{{ $order->placed_at?->toDateTimeString() ?? '—' }}</td><td class="nowrap">{{ $order->filled_at?->toDateTimeString() ?? '—' }}</td><td>{{ $exitReason }}</td><td class="nowrap {{ is_numeric($pnlPercent) ? ((float) $pnlPercent >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($pnlPercent) ? number_format((float) $pnlPercent, 2) : '—' }}</td><td class="nowrap {{ is_numeric($pnlAmount) ? ((float) $pnlAmount >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($pnlAmount) ? number_format((float) $pnlAmount, 2) : '—' }}</td><td class="nowrap {{ is_numeric($rMultiple) ? ((float) $rMultiple >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($rMultiple) ? number_format((float) $rMultiple, 2) : '—' }}</td><td>{{ $keyReason }}</td></tr>
+@empty<tr><td colspan="18">No records found for selected filters.</td></tr>@endforelse
+</tbody></table>@include('admin.partials.pagination', ['paginator' => $orders])</div>
+</main></body></html>

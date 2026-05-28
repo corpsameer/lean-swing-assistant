@@ -1,87 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trade Setups</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
-        main { max-width: 1200px; margin: 0 auto; padding: 24px; }
-        h1 { margin: 0 0 8px; font-size: 28px; }
-        p { margin: 0; color: #4b5563; }
-        nav { margin-top: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-        nav a { color: #2563eb; text-decoration: none; }
-        .auth-actions { margin-left: auto; }
-        .logout-btn { background: #111827; color: #fff; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-        .panel { margin-top: 20px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
-        .empty { padding: 16px; color: #374151; }
-        .table-wrap { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th, td { text-align: left; border-bottom: 1px solid #e5e7eb; padding: 8px 10px; vertical-align: top; }
-        th { background: #f9fafb; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; white-space: nowrap; }
-        td { background: #fff; }
-        .nowrap { white-space: nowrap; }
-    </style>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Trade Setups</title>
+    <style>body{font-family:Arial,sans-serif;margin:0;background:#f3f4f6;color:#111827}main{max-width:1400px;margin:0 auto;padding:24px}h1{margin:0 0 8px;font-size:28px}p{margin:0;color:#4b5563}nav{margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}nav a{color:#2563eb;text-decoration:none}.auth-actions{margin-left:auto}.logout-btn{background:#111827;color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer}.panel{margin-top:20px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px}.empty{padding:16px;color:#374151}.table-wrap{overflow-x:auto;padding:0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;border-bottom:1px solid #e5e7eb;padding:8px 10px;vertical-align:top}th{background:#f9fafb;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#6b7280;white-space:nowrap}.sort-link{color:#2563eb;text-decoration:none}.nowrap{white-space:nowrap}.filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.filters label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#4b5563}.filters input,.filters select{min-width:130px;padding:6px;border:1px solid #d1d5db;border-radius:6px}.filters button,.filters a{padding:7px 10px;border-radius:6px}.filters button{border:0;background:#2563eb;color:#fff}.pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px}.pagination-summary{color:#4b5563;font-size:14px}.pagination-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.pagination-link{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;color:#2563eb;text-decoration:none;font-size:14px}.pagination-link.active{background:#2563eb;border-color:#2563eb;color:#fff;font-weight:700}.pagination-link.disabled{background:#f3f4f6;color:#9ca3af}.pagination-ellipsis{padding:0 4px;color:#6b7280}</style>
 </head>
-<body>
-    <main>
-        <h1>Trade Setups</h1>
-        <p>Read-only visibility of generated trade setups.</p>
-        <nav>
-            <a href="{{ url('/admin/trade-setups') }}">Trade Setups</a>
-            <a href="{{ url('/admin/orders') }}">Orders</a>
-            <a href="{{ url('/admin/trades') }}">Trades</a>
-            <a href="{{ url('/admin/analytics') }}">Analytics</a>
-            <a href="{{ url('/admin/symbols') }}">Symbols</a>
-            <a href="{{ url('/admin/watchlist') }}">Watchlist</a>
-            <form class="auth-actions" method="POST" action="{{ url('/logout') }}">
-                @csrf
-                <button class="logout-btn" type="submit">Logout</button>
-            </form>
-        </nav>
-
-        @if ($tradeSetups->isEmpty())
-            <div class="panel empty">No trade setups found yet.</div>
-        @else
-            <div class="panel table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Status</th>
-                            <th>Entry Price</th>
-                            <th>Stop Price</th>
-                            <th>Target 1</th>
-                            <th>Target 2</th>
-                            <th>Risk %</th>
-                            <th>Setup Type</th>
-                            <th>Candidate Stage</th>
-                            <th>Notes</th>
-                            <th>Created At</th>
-                            <th>Updated At</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($tradeSetups as $setup)
-                            <tr>
-                                <td class="nowrap">{{ $setup->symbol?->symbol ?? ($setup->symbol_id ? 'ID '.$setup->symbol_id : '—') }}</td>
-                                <td class="nowrap">{{ $setup->status ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->entry_price ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->stop_price ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->target1_price ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->target2_price ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->risk_percent ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->sourceCandidate?->setup_type ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->sourceCandidate?->stage ?? '—' }}</td>
-                                <td>{{ $setup->notes ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->created_at?->toDateTimeString() ?? '—' }}</td>
-                                <td class="nowrap">{{ $setup->updated_at?->toDateTimeString() ?? '—' }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        @endif
-    </main>
-</body>
-</html>
+<body><main>
+<h1>Trade Setups</h1><p>Read-only visibility of generated trade setups.</p>
+<nav><a href="{{ url('/admin/trade-setups') }}">Trade Setups</a><a href="{{ url('/admin/orders') }}">Orders</a><a href="{{ url('/admin/trades') }}">Trades</a><a href="{{ url('/admin/analytics') }}">Analytics</a><a href="{{ url('/admin/symbols') }}">Symbols</a><a href="{{ url('/admin/watchlist') }}">Watchlist</a><form class="auth-actions" method="POST" action="{{ url('/logout') }}">@csrf<button class="logout-btn" type="submit">Logout</button></form></nav>
+<div class="panel"><form class="filters" method="GET" action="{{ url('/admin/trade-setups') }}">
+<label>Symbol <input name="symbol" value="{{ $filters['symbol'] }}"></label><label>Status <select name="status"><option value="">All</option>@foreach($statuses as $v)<option value="{{ $v }}" @selected($filters['status']===$v)>{{ $v }}</option>@endforeach</select></label><label>Setup Type <select name="setup_type"><option value="">All</option>@foreach($setupTypes as $v)<option value="{{ $v }}" @selected($filters['setupType']===$v)>{{ $v }}</option>@endforeach</select></label><label>Candidate Stage <select name="candidate_stage"><option value="">All</option>@foreach($candidateStages as $v)<option value="{{ $v }}" @selected($filters['candidateStage']===$v)>{{ $v }}</option>@endforeach</select></label><label>From <input type="date" name="date_from" value="{{ $filters['dateFrom'] }}"></label><label>To <input type="date" name="date_to" value="{{ $filters['dateTo'] }}"></label><label>Page Size <select name="page_size">@foreach($pageSizes as $s)<option value="{{ $s }}" @selected($filters['pageSize']===$s)>{{ $s }}</option>@endforeach</select></label><button type="submit">Apply</button><a href="{{ url('/admin/trade-setups') }}">Reset</a>
+</form></div>
+<div class="panel table-wrap"><table><thead><tr>@include('components.sortable-th',['label'=>'ID','sort'=>'id'])@include('components.sortable-th',['label'=>'Symbol','sort'=>'symbol'])@include('components.sortable-th',['label'=>'Status','sort'=>'status'])@include('components.sortable-th',['label'=>'Entry Price','sort'=>'entry_price'])@include('components.sortable-th',['label'=>'Stop Price','sort'=>'stop_price'])@include('components.sortable-th',['label'=>'Target 1','sort'=>'target1_price'])@include('components.sortable-th',['label'=>'Target 2','sort'=>'target2_price'])<th>Risk %</th>@include('components.sortable-th',['label'=>'Setup Type','sort'=>'setup_type'])@include('components.sortable-th',['label'=>'Candidate Stage','sort'=>'candidate_stage'])<th>Notes</th>@include('components.sortable-th',['label'=>'Created At','sort'=>'created_at'])@include('components.sortable-th',['label'=>'Updated At','sort'=>'updated_at'])</tr></thead><tbody>
+@forelse ($tradeSetups as $setup)
+<tr><td class="nowrap">{{ $setup->id ?? '—' }}</td><td class="nowrap">{{ $setup->symbol?->symbol ?? ($setup->symbol_id ? 'ID '.$setup->symbol_id : '—') }}</td><td class="nowrap">{{ $setup->status ?? '—' }}</td><td class="nowrap">{{ $setup->entry_price ?? '—' }}</td><td class="nowrap">{{ $setup->stop_price ?? '—' }}</td><td class="nowrap">{{ $setup->target1_price ?? '—' }}</td><td class="nowrap">{{ $setup->target2_price ?? '—' }}</td><td class="nowrap">{{ $setup->risk_percent ?? '—' }}</td><td class="nowrap">{{ $setup->sourceCandidate?->setup_type ?? '—' }}</td><td class="nowrap">{{ $setup->sourceCandidate?->stage ?? '—' }}</td><td>{{ $setup->notes ?? '—' }}</td><td class="nowrap">{{ $setup->created_at?->toDateTimeString() ?? '—' }}</td><td class="nowrap">{{ $setup->updated_at?->toDateTimeString() ?? '—' }}</td></tr>
+@empty<tr><td colspan="13">No records found for selected filters.</td></tr>@endforelse
+</tbody></table>@include('admin.partials.pagination', ['paginator' => $tradeSetups])</div>
+</main></body></html>
