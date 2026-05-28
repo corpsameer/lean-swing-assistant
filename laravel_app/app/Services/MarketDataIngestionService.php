@@ -37,6 +37,7 @@ class MarketDataIngestionService
         $successCount = 0;
         $errorCount = 0;
         $snapshotsStored = 0;
+        $warningsCount = 0;
 
         foreach ($payload['symbols'] as $symbolPayload) {
             $total++;
@@ -48,6 +49,14 @@ class MarketDataIngestionService
             );
 
             $status = (string) Arr::get($symbolPayload, 'status', 'unknown');
+            $bars = Arr::get($symbolPayload, 'bars');
+            if ($status === 'ok' && (! is_array($bars) || $bars === [])) {
+                $status = 'error';
+                $symbolPayload['status'] = 'error';
+                $symbolPayload['error'] = 'empty_bars_with_ok_status';
+                $warningsCount++;
+            }
+
             if ($status === 'ok') {
                 $successCount++;
             } else {
@@ -74,6 +83,7 @@ class MarketDataIngestionService
             'success_count' => $successCount,
             'error_count' => $errorCount,
             'snapshots_stored' => $snapshotsStored,
+            'warnings_count' => $warningsCount,
         ];
     }
 

@@ -51,7 +51,7 @@ class WorkflowDailyRefine extends Command
             $successfulFetchCount = $dailyFetchService->countSuccessfulSymbolsFromSnapshot($snapshotPath);
             $this->line('Step 1/4 gate: successful symbols fetched = '.$successfulFetchCount);
             if ($successfulFetchCount <= 0) {
-                $this->warn('Stopping workflow: no successful daily bars fetched.');
+                $this->warn('Stopping workflow: no valid daily bars fetched.');
 
                 return self::FAILURE;
             }

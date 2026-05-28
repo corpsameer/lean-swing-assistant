@@ -14,6 +14,18 @@ from app.config import load_settings
 from app.ibkr_client import IBKRClient
 
 
+def classify_ibkr_error(errors: list[dict[str, object]]) -> str | None:
+    for row in errors:
+        code = int(row.get("error_code", 0) or 0)
+        message = str(row.get("error_message", "") or "").lower()
+        if "different ip address" in message or "duplicate" in message:
+            return "duplicate_session"
+        if code == 162:
+            return "ibkr_error_162"
+
+    return None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch intraday market snapshot data from IBKR for one or more symbols."
@@ -65,13 +77,21 @@ def main() -> int:
                         "bars": snapshot["bars"],
                     }
                 )
+                errors = client.pop_recent_errors()
+                if snapshot["bars"] == [] or snapshot["current_price"] is None:
+                    payload["symbols"][-1]["status"] = "error"
+                    payload["symbols"][-1]["error"] = classify_ibkr_error(errors) or "no_market_data"
+                    payload["symbols"][-1]["bars"] = []
+                else:
+                    payload["symbols"][-1]["error"] = None
             except Exception as exc:
+                errors = client.pop_recent_errors()
                 payload["symbols"].append(
                     {
                         "symbol": symbol,
                         "status": "error",
                         "snapshot_type": "intraday",
-                        "error": str(exc),
+                        "error": classify_ibkr_error(errors) or str(exc),
                         "metrics": {
                             "current_price": None,
                             "session_high": None,

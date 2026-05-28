@@ -61,6 +61,10 @@ class IngestMarketJson extends Command
         $this->line('total symbols processed: '.$summary['total_symbols_processed']);
         $this->line('success count: '.$summary['success_count']);
         $this->line('error count: '.$summary['error_count']);
+        if (($summary['warnings_count'] ?? 0) > 0) {
+            $this->warn('warnings: converted ok snapshots with empty bars to error status');
+            $this->line('warnings count: '.$summary['warnings_count']);
+        }
         $this->line('snapshots stored: '.$summary['snapshots_stored']);
 
         return self::SUCCESS;

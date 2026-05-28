@@ -47,6 +47,12 @@ class RunIntradayPromptValidate extends Command
             $this->line('ingesting intraday snapshot...');
             $ingestionSummary = $intradayRefreshService->ingestFromJsonPath($outputPath);
             $this->line('intraday ingestion completed: '.$ingestionSummary['snapshots_stored'].' snapshots stored');
+            $validCount = (int) ($ingestionSummary['success_count'] ?? 0);
+            if ($validCount <= 0) {
+                $this->warn('Skipping intraday validation: no valid intraday current prices/bars fetched.');
+
+                return self::SUCCESS;
+            }
             $this->line('continuing validation...');
 
             $summary = $service->run();

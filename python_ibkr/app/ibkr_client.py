@@ -12,8 +12,11 @@ class IBKRClient:
     def __init__(self, settings: IBKRSettings):
         self.settings = settings
         self.ib = IB()
+        self._recent_errors: list[dict[str, Any]] = []
 
     def connect(self) -> None:
+        self._recent_errors = []
+        self.ib.errorEvent += self._on_ib_error
         self.ib.connect(
             host=self.settings.host,
             port=self.settings.port,
@@ -22,8 +25,24 @@ class IBKRClient:
         )
 
     def disconnect(self) -> None:
+        self.ib.errorEvent -= self._on_ib_error
         if self.ib.isConnected():
             self.ib.disconnect()
+
+    def pop_recent_errors(self) -> list[dict[str, Any]]:
+        errors = [*self._recent_errors]
+        self._recent_errors = []
+
+        return errors
+
+    def _on_ib_error(self, req_id: int, error_code: int, error_string: str, contract: Any) -> None:
+        self._recent_errors.append(
+            {
+                "req_id": req_id,
+                "error_code": int(error_code),
+                "error_message": str(error_string or ""),
+            }
+        )
 
     def fetch_daily_bars(self, symbol: str, lookback_days: int = 90) -> list[dict[str, Any]]:
         contract = Stock(symbol=symbol, exchange="SMART", currency="USD")
