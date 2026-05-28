@@ -90,9 +90,9 @@ class AnalyticsController extends Controller
             $verdicts = $reviewed->pluck('final_verdict')->filter();
             $reviewSummary = [
                 'reviewed_count' => $reviewed->count(),
-                'avg_setup_quality_score' => $reviewed->pluck('setup_quality_score')->filter('is_numeric')->avg() ?? 0,
-                'avg_entry_quality_score' => $reviewed->pluck('entry_quality_score')->filter('is_numeric')->avg() ?? 0,
-                'avg_risk_reward_quality_score' => $reviewed->pluck('risk_reward_quality_score')->filter('is_numeric')->avg() ?? 0,
+                'avg_setup_quality_score' => $reviewed->pluck('setup_quality_score')->filter(fn ($v) => is_numeric($v))->avg() ?? 0,
+                'avg_entry_quality_score' => $reviewed->pluck('entry_quality_score')->filter(fn ($v) => is_numeric($v))->avg() ?? 0,
+                'avg_risk_reward_quality_score' => $reviewed->pluck('risk_reward_quality_score')->filter(fn ($v) => is_numeric($v))->avg() ?? 0,
                 'prefer_similar' => $verdicts->filter(fn ($v) => $v === 'prefer_similar')->count(),
                 'avoid_similar' => $verdicts->filter(fn ($v) => $v === 'avoid_similar')->count(),
                 'neutral' => $verdicts->filter(fn ($v) => $v === 'neutral')->count(),
