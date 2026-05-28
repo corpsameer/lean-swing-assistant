@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\IbkrHealthService;
 use App\Services\IntradayRefreshService;
 use App\Services\PromptCIntradayValidationService;
 use Illuminate\Console\Command;
@@ -13,9 +14,22 @@ class RunIntradayPromptValidate extends Command
 
     protected $description = 'Run Prompt C intraday entry validation and create planned trade setups';
 
-    public function handle(IntradayRefreshService $intradayRefreshService, PromptCIntradayValidationService $service): int
+    public function handle(
+        IntradayRefreshService $intradayRefreshService,
+        PromptCIntradayValidationService $service,
+        IbkrHealthService $ibkrHealthService
+    ): int
     {
         try {
+            $health = $ibkrHealthService->check();
+            if (! $health['ok']) {
+                $this->error('IBKR health check failed; skipping workflow safely.');
+                $this->line('IBKR health details: '.$health['message']);
+
+                return self::FAILURE;
+            }
+            $this->line('IBKR health check passed');
+
             $symbols = $intradayRefreshService->resolveActiveSymbols();
             $this->line('active symbols resolved: '.count($symbols));
 

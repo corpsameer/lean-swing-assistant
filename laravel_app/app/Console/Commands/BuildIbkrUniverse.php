@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Symbol;
+use App\Services\IbkrHealthService;
 use App\Services\WorkflowDailyFetchService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
@@ -16,8 +17,17 @@ class BuildIbkrUniverse extends Command
 
     protected $description = 'Build symbol universe from IBKR scanner results';
 
-    public function handle(WorkflowDailyFetchService $fetchService): int
+    public function handle(WorkflowDailyFetchService $fetchService, IbkrHealthService $ibkrHealthService): int
     {
+        $health = $ibkrHealthService->check();
+        if (! $health['ok']) {
+            $this->error('IBKR health check failed; skipping workflow safely.');
+            $this->line('IBKR health details: '.$health['message']);
+
+            return self::FAILURE;
+        }
+        $this->line('IBKR health check passed');
+
         $outputPath = storage_path('app/ibkr_universe.json');
         $scriptPath = $fetchService->resolvePythonIbkrBasePath().'/scripts/build_ibkr_universe.py';
         if (! is_file($scriptPath)) {
