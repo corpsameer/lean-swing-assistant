@@ -34,14 +34,6 @@ Schedule::command('workflow:weekend-scan')
     ->appendOutputTo(storage_path('logs/scheduler-weekend-scan.log'));
 
 
-// IBKR universe refresh (Friday 14:00 America/New_York)
-Schedule::command('universe:build-ibkr')
-    ->fridays()
-    ->at('14:00')
-    ->timezone('America/New_York')
-    ->withoutOverlapping()
-    ->appendOutputTo(storage_path('logs/scheduler-universe-build.log'));
-
 // Daily refine workflow (US trading weekdays, 08:30 America/New_York)
 Schedule::command('workflow:daily-refine')
     ->weekdays()
@@ -75,3 +67,18 @@ Schedule::command('trades:simulate-status')
     ->timezone('America/New_York')
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler-simulate-status.log'));
+
+// Prompt D trade review (US weekdays, post-close and optional midday pass)
+Schedule::command('prompt:trade-review --limit=20')
+    ->weekdays()
+    ->at('12:30')
+    ->timezone('America/New_York')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/scheduler-trade-review.log'));
+
+Schedule::command('prompt:trade-review --limit=20')
+    ->weekdays()
+    ->at('16:20')
+    ->timezone('America/New_York')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/scheduler-trade-review.log'));

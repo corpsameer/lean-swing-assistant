@@ -240,8 +240,11 @@ User::create([
 The app now uses Laravel Scheduler (single scheduler entrypoint) to run automation workflows with explicit timezones and overlap protection.
 
 Configured schedules:
+- `universe:build-nasdaq`
+  - Sunday 18:00 `America/New_York`
+  - log: `storage/logs/scheduler-nasdaq-universe.log`
 - `workflow:weekend-scan`
-  - Saturday 09:00 `Asia/Kolkata`
+  - Sunday 20:00 `America/New_York`
   - log: `storage/logs/scheduler-weekend-scan.log`
 - `workflow:daily-refine`
   - Weekdays 08:30 `America/New_York`
@@ -253,12 +256,20 @@ Configured schedules:
   - Weekdays every 2 minutes, between 09:30 and 16:05 `America/New_York`
   - Weekdays final run at 16:10 `America/New_York`
   - log: `storage/logs/scheduler-simulate-status.log`
+- `prompt:trade-review --limit=20`
+  - Weekdays 12:30 `America/New_York` (optional midday closed-trade pass)
+  - Weekdays 16:20 `America/New_York` (post-close review pass)
+  - log: `storage/logs/scheduler-trade-review.log`
 
 Safety notes:
 - Scheduler wiring only runs existing commands; it does not add live-trading paths.
 - Execution remains simulated unless existing environment/commands are changed externally.
 - `withoutOverlapping()` is applied on all scheduled commands.
 - Existing duplicate active setup guard continues to protect repeated intraday runs for same symbol.
+- `universe:build-ibkr` is retained for manual testing only and is not scheduled.
+- Weekend scan resolves symbols from active DB universe first (Nasdaq-built universe), then only falls back to `WORKFLOW_SYMBOLS` if needed.
+- T15 exit outcome/PnL flow is handled via `trades:simulate-status`.
+- T16 trade review flow is handled via scheduled `prompt:trade-review --limit=20`.
 
 ### VPS cron (single entry)
 
