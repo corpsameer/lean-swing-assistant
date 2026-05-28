@@ -14,6 +14,7 @@ class TradeController extends Controller
                 'symbol:id,symbol',
                 'orders' => fn ($query) => $query->orderByDesc('id'),
                 'sourceCandidate:id,setup_type',
+                'tradeReview:id,trade_setup_id,review_text,lessons_json',
             ])
             ->orderByDesc('id')
             ->get()

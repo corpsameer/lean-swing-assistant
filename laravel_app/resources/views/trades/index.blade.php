@@ -83,6 +83,10 @@
                             <th>R Multiple</th>
                             <th>Entered At</th>
                             <th>Closed At</th>
+                            <th>Review Status</th>
+                            <th>Review Summary</th>
+                            <th>Setup Quality</th>
+                            <th>Final Verdict</th>
                             <th>Placed At</th>
                             <th>Filled At</th>
                         </tr>
@@ -101,6 +105,9 @@
                                 $rMultiple = $meta['r_multiple'] ?? null;
                                 $enteredAt = $meta['simulated_entered_at'] ?? '—';
                                 $closedAt = $meta['simulated_closed_at'] ?? '—';
+                                $review = $setup->tradeReview;
+                                $reviewJson = $review?->lessons_json ?? [];
+                                $reviewStatus = $review ? 'reviewed' : 'pending';
                             @endphp
                             <tr>
                                 <td class="nowrap">{{ $setup->id }}</td>
@@ -120,6 +127,10 @@
                                 <td class="nowrap {{ is_numeric($rMultiple) ? ((float) $rMultiple >= 0 ? 'text-green' : 'text-red') : '' }}">{{ is_numeric($rMultiple) ? number_format((float) $rMultiple, 2) : '—' }}</td>
                                 <td class="nowrap">{{ $enteredAt }}</td>
                                 <td class="nowrap">{{ $closedAt }}</td>
+                                <td class="nowrap"><span class="{{ $review ? 'badge badge-green' : 'badge badge-gray' }}">{{ $reviewStatus }}</span></td>
+                                <td>{{ $review?->review_text ?? '—' }}</td>
+                                <td class="nowrap">{{ is_numeric($reviewJson['setup_quality_score'] ?? null) ? (int) $reviewJson['setup_quality_score'] : '—' }}</td>
+                                <td class="nowrap">{{ $reviewJson['final_verdict'] ?? '—' }}</td>
                                 <td class="nowrap">{{ $latestOrder?->placed_at?->toDateTimeString() ?? '—' }}</td>
                                 <td class="nowrap">{{ $latestOrder?->filled_at?->toDateTimeString() ?? '—' }}</td>
                             </tr>
