@@ -12,6 +12,8 @@ use Symfony\Component\Process\Process;
 
 class WorkflowDailyFetchService
 {
+    private const DAILY_FETCH_MAX_SYMBOLS_PER_CALL = 500;
+
     public function resolvePythonExecutable(): string
     {
         $pythonExecutable = trim((string) env('EXECUTION_PYTHON_EXECUTABLE', 'python'));
@@ -133,27 +135,87 @@ class WorkflowDailyFetchService
             throw new RuntimeException('Daily fetch script not found at: '.$scriptPath);
         }
 
-        $command = [$pythonExecutable, $scriptPath, ...$symbols, '--output', $outputPath];
-        $process = new Process($command, base_path());
-        $process->setTimeout(180.0);
-        $process->run();
+        $symbolBatches = array_chunk($symbols, self::DAILY_FETCH_MAX_SYMBOLS_PER_CALL);
+        $mergedPayload = null;
 
-        if (! $process->isSuccessful()) {
-            $errorOutput = trim($process->getErrorOutput());
-            $stdOutput = trim($process->getOutput());
-            $message = $errorOutput !== '' ? $errorOutput : $stdOutput;
+        foreach ($symbolBatches as $batchIndex => $symbolBatch) {
+            $batchOutputPath = count($symbolBatches) === 1
+                ? $outputPath
+                : storage_path(sprintf('app/daily_snapshot_part_%d.json', $batchIndex + 1));
 
-            throw new RuntimeException('Daily fetch failed: '.($message !== '' ? $message : 'unknown python process error'));
+            $command = [$pythonExecutable, $scriptPath, ...$symbolBatch, '--output', $batchOutputPath];
+            $process = new Process($command, base_path());
+            $process->setTimeout(180.0);
+            $process->run();
+
+            if (! $process->isSuccessful()) {
+                $errorOutput = trim($process->getErrorOutput());
+                $stdOutput = trim($process->getOutput());
+                $message = $errorOutput !== '' ? $errorOutput : $stdOutput;
+                $commandLine = $process->getCommandLine();
+                $exitCode = $process->getExitCode();
+
+                if ($message === '') {
+                    $message = sprintf(
+                        'python process exited without output (exit_code=%s, command=%s)',
+                        $exitCode !== null ? (string) $exitCode : 'null',
+                        $commandLine
+                    );
+                }
+
+                throw new RuntimeException('Daily fetch failed: '.$message);
+            }
+
+            if (! is_file($batchOutputPath)) {
+                throw new RuntimeException('Daily fetch completed but output file was not created: '.$batchOutputPath);
+            }
+
+            $batchPayload = $this->readSnapshotPayload($batchOutputPath);
+            if (! isset($batchPayload['symbols']) || ! is_array($batchPayload['symbols'])) {
+                throw new RuntimeException('Daily fetch output does not contain a valid symbols array: '.$batchOutputPath);
+            }
+
+            if ($mergedPayload === null) {
+                $mergedPayload = $batchPayload;
+            } else {
+                $mergedPayload['symbols'] = array_merge($mergedPayload['symbols'] ?? [], $batchPayload['symbols']);
+            }
         }
 
-        if (! is_file($outputPath)) {
-            throw new RuntimeException('Daily fetch completed but output file was not created: '.$outputPath);
+        if ($mergedPayload === null) {
+            throw new RuntimeException('Daily fetch failed: no payload was produced.');
+        }
+
+        if (count($symbolBatches) > 1) {
+            file_put_contents($outputPath, json_encode($mergedPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
         }
 
         return $outputPath;
     }
 
     public function countSuccessfulSymbolsFromSnapshot(string $snapshotPath): int
+    {
+        $payload = $this->readSnapshotPayload($snapshotPath);
+
+        if (! is_array($payload) || ! isset($payload['symbols']) || ! is_array($payload['symbols'])) {
+            throw new RuntimeException('Snapshot JSON does not contain a valid symbols array.');
+        }
+
+        $successCount = 0;
+        foreach ($payload['symbols'] as $symbolPayload) {
+            $bars = is_array($symbolPayload) ? ($symbolPayload['bars'] ?? null) : null;
+            if (is_array($symbolPayload) && (($symbolPayload['status'] ?? null) === 'ok') && is_array($bars) && $bars !== []) {
+                $successCount++;
+            }
+        }
+
+        return $successCount;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function readSnapshotPayload(string $snapshotPath): array
     {
         if (! is_file($snapshotPath)) {
             throw new RuntimeException('Snapshot file is missing: '.$snapshotPath);
@@ -170,19 +232,11 @@ class WorkflowDailyFetchService
             throw new RuntimeException('Snapshot JSON is invalid: '.$exception->getMessage(), 0, $exception);
         }
 
-        if (! is_array($payload) || ! isset($payload['symbols']) || ! is_array($payload['symbols'])) {
-            throw new RuntimeException('Snapshot JSON does not contain a valid symbols array.');
+        if (! is_array($payload)) {
+            throw new RuntimeException('Snapshot JSON root is not an object.');
         }
 
-        $successCount = 0;
-        foreach ($payload['symbols'] as $symbolPayload) {
-            $bars = is_array($symbolPayload) ? ($symbolPayload['bars'] ?? null) : null;
-            if (is_array($symbolPayload) && (($symbolPayload['status'] ?? null) === 'ok') && is_array($bars) && $bars !== []) {
-                $successCount++;
-            }
-        }
-
-        return $successCount;
+        return $payload;
     }
 
     /**

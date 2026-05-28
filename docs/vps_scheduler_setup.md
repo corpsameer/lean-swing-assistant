@@ -41,10 +41,12 @@ Notes:
 
 Expected scheduler-related logs:
 
+- `storage/logs/scheduler-nasdaq-universe.log`
 - `storage/logs/scheduler-weekend-scan.log`
 - `storage/logs/scheduler-daily-refine.log`
 - `storage/logs/scheduler-intraday-validate.log`
 - `storage/logs/scheduler-simulate-status.log`
+- `storage/logs/scheduler-trade-review.log`
 - `storage/logs/scheduler-cron.log`
 
 Scheduler command logs are configured through Laravel `storage_path('logs/...')` output paths.
@@ -97,10 +99,12 @@ Run from `laravel_app`:
 cd /var/www/lean-swing-assistant/laravel_app
 php artisan optimize:clear
 php artisan schedule:list
+php artisan universe:build-nasdaq
 php artisan workflow:weekend-scan
 php artisan workflow:daily-refine
 php artisan prompt:intraday-validate
 php artisan trades:simulate-status
+php artisan prompt:trade-review --limit=20
 php artisan schedule:run
 ```
 
@@ -119,5 +123,10 @@ tail -f storage/logs/scheduler-simulate-status.log
 - Keep `EXECUTION_DRIVER=simulated` on VPS for now.
 - Do **not** enable IBKR live execution.
 - Keep `LIVE_TRADING_ENABLED=false`.
+- Nasdaq universe build is scheduled Sunday 18:00 `America/New_York`.
+- Weekend scan is scheduled Sunday 20:00 `America/New_York`.
+- `universe:build-ibkr` remains available for manual testing only; it is not scheduled.
+- T15 exit outcome/PnL tracking runs through `trades:simulate-status`.
+- T16 trade reviews run automatically via `prompt:trade-review --limit=20` (12:30 + 16:20 `America/New_York`).
 - IBKR Gateway/TWS setup is handled separately in **T14.5**.
 - Scheduler can run the simulated system once data connectivity is available.
