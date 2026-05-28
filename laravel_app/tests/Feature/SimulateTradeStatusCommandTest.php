@@ -59,6 +59,7 @@ class SimulateTradeStatusCommandTest extends TestCase
 
         $this->artisan('trades:simulate-status')
             ->expectsOutputToContain('tp hit count: 1')
+            ->expectsOutputToContain('closed_trade symbol=AAPL')
             ->assertExitCode(0);
 
         $order->refresh();
@@ -67,6 +68,10 @@ class SimulateTradeStatusCommandTest extends TestCase
         $this->assertSame('simulated_tp_hit', $order->status);
         $this->assertSame('closed', $tradeSetup->status);
         $this->assertSame('target1_hit', $order->meta_json['exit_reason']);
+        $this->assertSame(10.0, (float) $order->meta_json['pnl_amount']);
+        $this->assertSame(5.0, (float) $order->meta_json['pnl_percent']);
+        $this->assertSame(5.0, (float) $order->meta_json['risk_amount']);
+        $this->assertSame(2.0, (float) $order->meta_json['r_multiple']);
     }
 
     public function test_d_entered_trade_hits_sl_and_closes(): void
@@ -84,6 +89,10 @@ class SimulateTradeStatusCommandTest extends TestCase
         $this->assertSame('simulated_sl_hit', $order->status);
         $this->assertSame('closed', $tradeSetup->status);
         $this->assertSame('stop_loss_hit', $order->meta_json['exit_reason']);
+        $this->assertSame(-5.0, (float) $order->meta_json['pnl_amount']);
+        $this->assertSame(-2.5, (float) $order->meta_json['pnl_percent']);
+        $this->assertSame(5.0, (float) $order->meta_json['risk_amount']);
+        $this->assertSame(-1.0, (float) $order->meta_json['r_multiple']);
     }
 
     private function createBreakoutPendingSetup(float $entryPrice): array

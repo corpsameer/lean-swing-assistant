@@ -10,7 +10,7 @@ use Illuminate\Support\Arr;
 class SimulatedTradeStatusService
 {
     /**
-     * @return array{orders_scanned:int,entered_count:int,tp_hit_count:int,sl_hit_count:int,skipped_count:int,errors:int,debug_lines:array<int,string>}
+     * @return array{orders_scanned:int,entered_count:int,tp_hit_count:int,sl_hit_count:int,skipped_count:int,errors:int,debug_lines:array<int,string>,closed_lines:array<int,string>,warning_lines:array<int,string>}
      */
     public function sync(): array
     {
@@ -22,6 +22,8 @@ class SimulatedTradeStatusService
             'skipped_count' => 0,
             'errors' => 0,
             'debug_lines' => [],
+            'closed_lines' => [],
+            'warning_lines' => [],
         ];
 
         $orders = Order::query()
@@ -112,14 +114,22 @@ class SimulatedTradeStatusService
                     }
 
                     if ($currentPrice <= $stopPrice) {
-                        $this->closeTradeAs($order, $tradeSetup, $currentPrice, 'simulated_sl_hit', 'stop_loss_hit');
+                        [$closedLine, $warningLine] = $this->closeTradeAs($order, $tradeSetup, $currentPrice, 'simulated_sl_hit', 'stop_loss_hit', $symbol);
+                        $summary['closed_lines'][] = $closedLine;
+                        if ($warningLine !== null) {
+                            $summary['warning_lines'][] = $warningLine;
+                        }
                         $summary['sl_hit_count']++;
                         $summary['debug_lines'][] = $this->buildDebugLine($order, $symbol, $tradeSetup, $setupType, $currentPrice, $entryPrice, $stopPrice, $targetPrice, 'closed: stop_loss_hit');
                         continue;
                     }
 
                     if ($currentPrice >= $targetPrice) {
-                        $this->closeTradeAs($order, $tradeSetup, $currentPrice, 'simulated_tp_hit', 'target1_hit');
+                        [$closedLine, $warningLine] = $this->closeTradeAs($order, $tradeSetup, $currentPrice, 'simulated_tp_hit', 'target1_hit', $symbol);
+                        $summary['closed_lines'][] = $closedLine;
+                        if ($warningLine !== null) {
+                            $summary['warning_lines'][] = $warningLine;
+                        }
                         $summary['tp_hit_count']++;
                         $summary['debug_lines'][] = $this->buildDebugLine($order, $symbol, $tradeSetup, $setupType, $currentPrice, $entryPrice, $stopPrice, $targetPrice, 'closed: target1_hit');
                         continue;
@@ -192,13 +202,19 @@ class SimulatedTradeStatusService
             ?? $this->toFloat($tradeSetup->stop_price);
     }
 
-    private function closeTradeAs(Order $order, TradeSetup $tradeSetup, float $currentPrice, string $orderStatus, string $reason): void
+    private function closeTradeAs(Order $order, TradeSetup $tradeSetup, float $currentPrice, string $orderStatus, string $reason, string $symbol): array
     {
         $meta = $order->meta_json ?? [];
+        $calcError = null;
         $meta['exit_reason'] = $reason;
         $meta['simulated_exit_price'] = $currentPrice;
         $meta['simulated_closed_at'] = now('UTC')->toIso8601String();
         $meta['last_simulated_checked_at'] = now('UTC')->toIso8601String();
+        [$calculatedMeta, $calcError] = $this->calculateOutcomeFields($order, $tradeSetup, $meta);
+        $meta = array_merge($meta, $calculatedMeta);
+        if ($calcError !== null) {
+            $meta['pnl_calculation_error'] = $calcError;
+        }
 
         $order->status = $orderStatus;
         $order->meta_json = $meta;
@@ -208,6 +224,54 @@ class SimulatedTradeStatusService
             $tradeSetup->status = 'closed';
             $tradeSetup->save();
         }
+
+        $closedLine = sprintf(
+            'closed_trade symbol=%s order_id=%d exit_reason=%s entry_price=%s exit_price=%s pnl_percent=%s pnl_amount=%s r_multiple=%s',
+            $symbol,
+            $order->id,
+            $reason,
+            $meta['simulated_entry_price'] ?? $tradeSetup->entry_price ?? 'n/a',
+            $meta['simulated_exit_price'] ?? 'n/a',
+            $meta['pnl_percent'] ?? 'n/a',
+            $meta['pnl_amount'] ?? 'n/a',
+            $meta['r_multiple'] ?? 'n/a',
+        );
+
+        $warningLine = $calcError !== null
+            ? 'warning: pnl calculation issue for order '.$order->id.' ('.$symbol.'): '.$calcError
+            : null;
+
+        return [$closedLine, $warningLine];
+    }
+
+    private function calculateOutcomeFields(Order $order, TradeSetup $tradeSetup, array $meta): array
+    {
+        $entryPrice = $this->toFloat(Arr::get($meta, 'simulated_entry_price'))
+            ?? $this->toFloat($tradeSetup->entry_price);
+        $exitPrice = $this->toFloat(Arr::get($meta, 'simulated_exit_price'));
+        $stopPrice = $this->toFloat($tradeSetup->stop_price)
+            ?? $this->toFloat(Arr::get($meta, 'stop_loss_price'))
+            ?? $this->toFloat(Arr::get($meta, 'bracket.stop_loss'));
+        $quantity = $this->toFloat($order->quantity);
+
+        if ($entryPrice === null || $exitPrice === null || $stopPrice === null || $quantity === null || $entryPrice <= 0.0) {
+            return [[], 'missing entry/exit/stop/quantity values required for pnl'];
+        }
+
+        $pnlAmount = ($exitPrice - $entryPrice) * $quantity;
+        $pnlPercent = (($exitPrice - $entryPrice) / $entryPrice) * 100.0;
+        $riskPerShare = $entryPrice - $stopPrice;
+        $riskAmount = $riskPerShare * $quantity;
+        $rewardAmount = $pnlAmount;
+        $rMultiple = $riskAmount > 0.0 ? ($pnlAmount / $riskAmount) : null;
+
+        return [[
+            'pnl_amount' => round($pnlAmount, 4),
+            'pnl_percent' => round($pnlPercent, 4),
+            'risk_amount' => round($riskAmount, 4),
+            'reward_amount' => round($rewardAmount, 4),
+            'r_multiple' => $rMultiple !== null ? round($rMultiple, 4) : null,
+        ], null];
     }
 
     private function extractInputValue(array $input, array $keys): mixed

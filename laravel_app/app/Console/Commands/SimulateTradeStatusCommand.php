@@ -22,6 +22,12 @@ class SimulateTradeStatusCommand extends Command
         foreach ($summary['debug_lines'] as $line) {
             $this->line($line);
         }
+        foreach ($summary['closed_lines'] as $line) {
+            $this->line($line);
+        }
+        foreach ($summary['warning_lines'] as $line) {
+            $this->warn($line);
+        }
 
         $this->line('simulated orders scanned: '.$summary['orders_scanned']);
         $this->line('entered count: '.$summary['entered_count']);
