@@ -33,6 +33,8 @@
             <a href="{{ url('/admin/orders') }}">Orders</a>
             <a href="{{ url('/admin/trades') }}">Trades</a>
             <a href="{{ url('/admin/analytics') }}">Analytics</a>
+            <a href="{{ url('/admin/symbols') }}">Symbols</a>
+            <a href="{{ url('/admin/watchlist') }}">Watchlist</a>
             <form class="auth-actions" method="POST" action="{{ url('/logout') }}">
                 @csrf
                 <button class="logout-btn" type="submit">Logout</button>
