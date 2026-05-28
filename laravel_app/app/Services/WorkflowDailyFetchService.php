@@ -142,8 +142,20 @@ class WorkflowDailyFetchService
             $errorOutput = trim($process->getErrorOutput());
             $stdOutput = trim($process->getOutput());
             $message = $errorOutput !== '' ? $errorOutput : $stdOutput;
+            $commandLine = $process->getCommandLine();
+            $exitCode = $process->getExitCode();
+            $timedOut = $process->isTimedOut();
 
-            throw new RuntimeException('Daily fetch failed: '.($message !== '' ? $message : 'unknown python process error'));
+            if ($message === '') {
+                $message = sprintf(
+                    'python process exited without output (exit_code=%s, timed_out=%s, command=%s)',
+                    $exitCode !== null ? (string) $exitCode : 'null',
+                    $timedOut ? 'yes' : 'no',
+                    $commandLine
+                );
+            }
+
+            throw new RuntimeException('Daily fetch failed: '.$message);
         }
 
         if (! is_file($outputPath)) {

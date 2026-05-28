@@ -292,3 +292,10 @@ php artisan workflow:daily-refine
 php artisan prompt:intraday-validate
 php artisan trades:simulate-status
 ```
+
+If `workflow:weekend-scan` fails at `fetch daily bars`, confirm Python runtime paths in `.env`:
+
+- `EXECUTION_PYTHON_EXECUTABLE` should point to a valid interpreter (`python`, `python3`, or full path).
+- `PYTHON_IBKR_BASE_PATH` should point to the `python_ibkr` project.
+
+The workflow now includes exit code/timeout/command details when Python exits without stdout/stderr, to make local debugging easier.
