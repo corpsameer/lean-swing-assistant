@@ -17,29 +17,29 @@ Artisan::command('inspire', function () {
 */
 
 
-// Nasdaq Trader universe refresh (Sunday 18:00 America/New_York)
+// Nasdaq Trader universe refresh (Sunday 17:00 America/New_York)
 Schedule::command('universe:build-nasdaq')
+    ->sundays()
+    ->at('17:00')
+    ->timezone('America/New_York')
+    ->withoutOverlapping(180)
+    ->appendOutputTo(storage_path('logs/scheduler-nasdaq-universe.log'));
+
+// Weekend workflow scan (Sunday 18:00 America/New_York)
+Schedule::command('workflow:weekend-scan')
     ->sundays()
     ->at('18:00')
     ->timezone('America/New_York')
-    ->withoutOverlapping()
-    ->appendOutputTo(storage_path('logs/scheduler-nasdaq-universe.log'));
-
-// Weekend workflow scan (Sunday 20:00 America/New_York)
-Schedule::command('workflow:weekend-scan')
-    ->sundays()
-    ->at('20:00')
-    ->timezone('America/New_York')
-    ->withoutOverlapping()
+    ->withoutOverlapping(240)
     ->appendOutputTo(storage_path('logs/scheduler-weekend-scan.log'));
 
 
-// Daily refine workflow (US trading weekdays, 08:30 America/New_York)
+// Daily refine workflow (US trading weekdays, 05:30 America/New_York)
 Schedule::command('workflow:daily-refine')
     ->weekdays()
-    ->at('08:30')
+    ->at('05:30')
     ->timezone('America/New_York')
-    ->withoutOverlapping()
+    ->withoutOverlapping(240)
     ->appendOutputTo(storage_path('logs/scheduler-daily-refine.log'));
 
 // Intraday validation (US weekdays, every 5 min from 09:30 to 15:45 America/New_York)
@@ -68,17 +68,10 @@ Schedule::command('trades:simulate-status')
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler-simulate-status.log'));
 
-// Prompt D trade review (US weekdays, post-close and optional midday pass)
+// Prompt D trade review (US weekdays, after final simulated status sync)
 Schedule::command('prompt:trade-review --limit=20')
     ->weekdays()
-    ->at('12:30')
+    ->at('16:30')
     ->timezone('America/New_York')
-    ->withoutOverlapping()
-    ->appendOutputTo(storage_path('logs/scheduler-trade-review.log'));
-
-Schedule::command('prompt:trade-review --limit=20')
-    ->weekdays()
-    ->at('16:20')
-    ->timezone('America/New_York')
-    ->withoutOverlapping()
+    ->withoutOverlapping(60)
     ->appendOutputTo(storage_path('logs/scheduler-trade-review.log'));

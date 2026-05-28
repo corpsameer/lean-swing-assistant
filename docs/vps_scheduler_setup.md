@@ -37,6 +37,18 @@ Notes:
 - Laravel scheduler decides which command(s) should run at that minute.
 - Do **not** create separate OS cron entries per command.
 
+## Scheduler Lifecycle
+
+Final scheduler lifecycle:
+
+- Sunday 17:00 ET: `universe:build-nasdaq`
+- Sunday 18:00 ET: `workflow:weekend-scan`
+- Weekdays 05:30 ET: `workflow:daily-refine`
+- Market hours: `prompt:intraday-validate` and `trades:simulate-status`
+- Weekdays 16:30 ET: `prompt:trade-review --limit=20`
+
+Heavy universe/workflow jobs run outside intraday market workflows and use extended overlap locks.
+
 ## Scheduler Log Files
 
 Expected scheduler-related logs:
@@ -123,10 +135,10 @@ tail -f storage/logs/scheduler-simulate-status.log
 - Keep `EXECUTION_DRIVER=simulated` on VPS for now.
 - Do **not** enable IBKR live execution.
 - Keep `LIVE_TRADING_ENABLED=false`.
-- Nasdaq universe build is scheduled Sunday 18:00 `America/New_York`.
-- Weekend scan is scheduled Sunday 20:00 `America/New_York`.
+- Nasdaq universe build is scheduled Sunday 17:00 `America/New_York`.
+- Weekend scan is scheduled Sunday 18:00 `America/New_York`.
 - `universe:build-ibkr` remains available for manual testing only; it is not scheduled.
 - T15 exit outcome/PnL tracking runs through `trades:simulate-status`.
-- T16 trade reviews run automatically via `prompt:trade-review --limit=20` (12:30 + 16:20 `America/New_York`).
+- T16 trade reviews run automatically via `prompt:trade-review --limit=20` (16:30 `America/New_York`, after the 16:10 final simulated status sync).
 - IBKR Gateway/TWS setup is handled separately in **T14.5**.
 - Scheduler can run the simulated system once data connectivity is available.
