@@ -32,14 +32,14 @@ class WorkflowWeekendScan extends Command
                 $this->option('symbols') !== null ? (string) $this->option('symbols') : null
             );
             $symbols = $symbolResolution['symbols'];
-            if (str_starts_with($symbolResolution['source'], 'ibkr_db_recent_')) {
-                preg_match('/^ibkr_db_recent_(\d+)d$/', $symbolResolution['source'], $matches);
+            if (str_starts_with($symbolResolution['source'], 'db_recent_')) {
+                preg_match('/^db_recent_(\d+)d$/', $symbolResolution['source'], $matches);
                 $recentDays = isset($matches[1]) ? (int) $matches[1] : null;
                 if ($recentDays !== null) {
                     $this->line(sprintf('Using recently seen active symbols from last %d days: %d', $recentDays, count($symbols)));
                 }
                 $this->line('Using DB active universe symbols: '.count($symbols));
-            } elseif ($symbolResolution['source'] === 'ibkr_db') {
+            } elseif ($symbolResolution['source'] === 'db') {
                 $this->line('Using DB active universe symbols: '.count($symbols));
             } elseif ($symbolResolution['source'] === 'manual_override') {
                 $this->line('Using manual --symbols override: '.count($symbols).' symbols');

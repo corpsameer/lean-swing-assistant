@@ -16,6 +16,15 @@ Artisan::command('inspire', function () {
 | It does not alter EXECUTION_DRIVER and does not enable live trading.
 */
 
+
+// Nasdaq Trader universe refresh (Sunday 18:00 America/New_York)
+Schedule::command('universe:build-nasdaq')
+    ->sundays()
+    ->at('18:00')
+    ->timezone('America/New_York')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/scheduler-nasdaq-universe.log'));
+
 // Weekend workflow scan (Sunday 20:00 America/New_York)
 Schedule::command('workflow:weekend-scan')
     ->sundays()

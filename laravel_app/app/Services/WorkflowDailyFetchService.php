@@ -69,7 +69,7 @@ class WorkflowDailyFetchService
             return ['symbols' => $this->resolveWorkflowSymbols(), 'source' => 'workflow_symbols'];
         }
 
-        $cap = max(1, (int) env('UNIVERSE_MAX_SYMBOLS', 200));
+        $cap = max(1, (int) env('UNIVERSE_MAX_SYMBOLS', (int) env('NASDAQ_UNIVERSE_MAX_SYMBOLS', 1000)));
         $recentDays = max(1, (int) env('UNIVERSE_RECENT_DAYS', 14));
         $hasLastSeenAt = Schema::hasColumn('symbols', 'last_seen_at');
 
@@ -78,13 +78,13 @@ class WorkflowDailyFetchService
                 $query->where('last_seen_at', '>=', now()->subDays($recentDays));
             });
             if ($recentSymbols !== []) {
-                return ['symbols' => $recentSymbols, 'source' => sprintf('ibkr_db_recent_%dd', $recentDays)];
+                return ['symbols' => $recentSymbols, 'source' => sprintf('db_recent_%dd', $recentDays)];
             }
         }
 
         $ibkrSymbols = $this->queryActiveSymbols($cap);
         if ($ibkrSymbols !== []) {
-            return ['symbols' => $ibkrSymbols, 'source' => 'ibkr_db'];
+            return ['symbols' => $ibkrSymbols, 'source' => 'db'];
         }
 
         return ['symbols' => $this->resolveWorkflowSymbols(), 'source' => 'workflow_symbols'];
