@@ -298,4 +298,5 @@ If `workflow:weekend-scan` fails at `fetch daily bars`, confirm Python runtime p
 - `EXECUTION_PYTHON_EXECUTABLE` should point to a valid interpreter (`python`, `python3`, or full path).
 - `PYTHON_IBKR_BASE_PATH` should point to the `python_ibkr` project.
 
-The workflow now includes exit code/timeout/command details when Python exits without stdout/stderr, to make local debugging easier.
+The workflow now includes exit code/command details when Python exits without stdout/stderr, to make local debugging easier.
+For large universes (>1000 symbols), daily fetch is automatically chunked into smaller Python calls and merged into a single snapshot.
