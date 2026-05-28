@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\IbkrHealthService;
 use App\Services\WorkflowDailyFetchService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
@@ -14,9 +15,17 @@ class WorkflowWeekendScan extends Command
 
     protected $description = 'Run the full weekend discovery workflow (daily fetch, ingest, metrics, scan, prompt rank)';
 
-    public function handle(WorkflowDailyFetchService $dailyFetchService): int
+    public function handle(WorkflowDailyFetchService $dailyFetchService, IbkrHealthService $ibkrHealthService): int
     {
         $this->info('Starting workflow: weekend-scan');
+        $health = $ibkrHealthService->check();
+        if (! $health['ok']) {
+            $this->error('IBKR health check failed; skipping workflow safely.');
+            $this->line('IBKR health details: '.$health['message']);
+
+            return self::FAILURE;
+        }
+        $this->line('IBKR health check passed');
 
         try {
             $symbolResolution = $dailyFetchService->resolveWorkflowSymbolsWithSource(
