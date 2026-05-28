@@ -16,11 +16,11 @@ Artisan::command('inspire', function () {
 | It does not alter EXECUTION_DRIVER and does not enable live trading.
 */
 
-// Weekend workflow scan (Saturday 09:30 Asia/Kolkata)
+// Weekend workflow scan (Sunday 20:00 America/New_York)
 Schedule::command('workflow:weekend-scan')
-    ->saturdays()
-    ->at('09:30')
-    ->timezone('Asia/Kolkata')
+    ->sundays()
+    ->at('20:00')
+    ->timezone('America/New_York')
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler-weekend-scan.log'));
 

@@ -19,13 +19,6 @@ class WorkflowWeekendScan extends Command
         $this->info('Starting workflow: weekend-scan');
 
         try {
-            if ((bool) env('UNIVERSE_AUTO_BUILD_BEFORE_WEEKEND_SCAN', true)) {
-                $this->line('Auto-build enabled: running universe:build-ibkr');
-                if ($this->runArtisanStep('Universe', 'build IBKR universe', 'universe:build-ibkr') === null) {
-                    $this->warn('Universe build failed, weekend workflow will attempt fallback symbol source.');
-                }
-            }
-
             $symbolResolution = $dailyFetchService->resolveWorkflowSymbolsWithSource(
                 $this->option('symbols') !== null ? (string) $this->option('symbols') : null
             );
