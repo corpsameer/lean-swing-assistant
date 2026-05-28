@@ -24,6 +24,15 @@ class DisableStaleSymbols extends Command
 
         $days = max(1, (int) $this->option('days'));
         $threshold = now()->subDays($days);
+        $query = Symbol::query()
+            ->where('is_active', true)
+            ->whereNotNull('last_seen_at')
+            ->where('last_seen_at', '<', $threshold);
+
+        $toDisable = (clone $query)->count();
+
+        $this->line('threshold: '.$threshold->toDateTimeString());
+        $this->line('symbols to disable: '.$toDisable);
 
         if (app()->isProduction() && ! $this->option('force') && ! $this->confirm('Disable stale symbols in production?', false)) {
             $this->warn('Aborted.');
@@ -31,14 +40,9 @@ class DisableStaleSymbols extends Command
             return self::FAILURE;
         }
 
-        $affected = Symbol::query()
-            ->where('is_active', true)
-            ->whereNotNull('last_seen_at')
-            ->where('last_seen_at', '<', $threshold)
-            ->update(['is_active' => false]);
+        $affected = $query->update(['is_active' => false]);
 
         $this->info('Stale symbol disable completed.');
-        $this->line('threshold: '.$threshold->toDateTimeString());
         $this->line('symbols disabled: '.$affected);
 
         return self::SUCCESS;
