@@ -104,19 +104,24 @@ class BuildNasdaqUniverse extends Command
 
         $inserted = 0;
         $updated = 0;
+        $truncatedNames = 0;
 
         foreach ($symbolsByTicker as $payload) {
             $existing = Symbol::query()->where('symbol', $payload['symbol'])->first();
+            $normalizedName = $this->normalizeNameForStorage($payload['name']);
+            if ($normalizedName !== $payload['name']) {
+                $truncatedNames++;
+            }
             $safe = ['is_active' => true];
 
             if ($hasColumn('company_name')) {
-                $safe['company_name'] = $payload['name'];
+                $safe['company_name'] = $normalizedName;
             }
             if ($hasColumn('name')) {
-                $safe['name'] = $payload['name'];
+                $safe['name'] = $normalizedName;
             }
             if ($hasColumn('security_name')) {
-                $safe['security_name'] = $payload['name'];
+                $safe['security_name'] = $normalizedName;
             }
             if ($hasColumn('exchange')) {
                 $safe['exchange'] = $payload['exchange'];
@@ -176,6 +181,7 @@ class BuildNasdaqUniverse extends Command
         if ($cappedCount !== null) {
             $this->line('Capped count: '.$cappedCount);
         }
+        $this->line('Names truncated to fit DB columns: '.$truncatedNames);
 
         return $symbolsList === [] ? self::FAILURE : self::SUCCESS;
     }
@@ -263,7 +269,7 @@ class BuildNasdaqUniverse extends Command
         $symbolLc = strtolower($symbol);
 
         $alwaysExcludePatterns = [
-            ' right', ' rights', ' preferred', ' depositary', ' note', ' notes', ' etn', ' fund', ' closed-end',
+            ' right', ' rights', ' preferred', ' depositary', ' note', ' notes', ' etn', ' fund', ' closed-end', ' certificate',
         ];
         foreach ($alwaysExcludePatterns as $pattern) {
             if (str_contains($nameLc, $pattern)) {
@@ -281,4 +287,15 @@ class BuildNasdaqUniverse extends Command
 
         return 'include';
     }
+
+    private function normalizeNameForStorage(?string $name): ?string
+    {
+        if ($name === null) {
+            return null;
+        }
+
+        return mb_substr(trim($name), 0, 255);
+    }
+
 }
+
