@@ -47,6 +47,12 @@ return [
         'max_extension_percent' => env('INTRADAY_MAX_EXTENSION_PERCENT', 1.5),
     ],
 
+    'trade_candidate' => [
+        'min_score' => env('TRADE_CANDIDATE_MIN_SCORE', 75),
+        'strong_score' => env('TRADE_CANDIDATE_STRONG_SCORE', 85),
+        'elite_score' => env('TRADE_CANDIDATE_ELITE_SCORE', 90),
+    ],
+
 
     'intraday_fetch' => [
         'python_executable' => env('INTRADAY_PYTHON_EXECUTABLE', env('PYTHON_EXECUTABLE', 'python')),
