@@ -8,12 +8,11 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 class WorkflowDailyFetchService
 {
-    private const DAILY_FETCH_MAX_SYMBOLS_PER_CALL = 500;
-
     public function resolvePythonExecutable(): string
     {
         $pythonExecutable = trim((string) env('EXECUTION_PYTHON_EXECUTABLE', 'python'));
@@ -57,18 +56,20 @@ class WorkflowDailyFetchService
     }
 
     /**
-     * @return array{symbols:array<int,string>,source:string}
+     * @return array{symbols:array<int,string>,source:string,total_available:int,max_symbols_applied:int|null}
      */
     public function resolveWorkflowSymbolsWithSource(?string $overrideSymbols = null, bool $forceWorkflowSymbolsFallback = false): array
     {
         if ($overrideSymbols !== null) {
             $symbols = $this->parseSymbolsCsv($overrideSymbols, '--symbols override');
 
-            return ['symbols' => $symbols, 'source' => 'manual_override'];
+            return ['symbols' => $symbols, 'source' => 'manual_override', 'total_available' => count($symbols), 'max_symbols_applied' => null];
         }
 
         if ($forceWorkflowSymbolsFallback) {
-            return ['symbols' => $this->resolveWorkflowSymbols(), 'source' => 'workflow_symbols'];
+            $symbols = $this->resolveWorkflowSymbols();
+
+            return ['symbols' => $symbols, 'source' => 'workflow_symbols', 'total_available' => count($symbols), 'max_symbols_applied' => null];
         }
 
         $cap = max(1, (int) env('UNIVERSE_MAX_SYMBOLS', (int) env('NASDAQ_UNIVERSE_MAX_SYMBOLS', 1000)));
@@ -76,20 +77,33 @@ class WorkflowDailyFetchService
         $hasLastSeenAt = Schema::hasColumn('symbols', 'last_seen_at');
 
         if ($hasLastSeenAt) {
-            $recentSymbols = $this->queryActiveSymbols($cap, function ($query) use ($recentDays) {
+            $recentScope = function ($query) use ($recentDays) {
                 $query->where('last_seen_at', '>=', now()->subDays($recentDays));
-            });
+            };
+            $recentSymbols = $this->queryActiveSymbols($cap, $recentScope);
             if ($recentSymbols !== []) {
-                return ['symbols' => $recentSymbols, 'source' => sprintf('db_recent_%dd', $recentDays)];
+                return [
+                    'symbols' => $recentSymbols,
+                    'source' => sprintf('db_recent_%dd', $recentDays),
+                    'total_available' => $this->countActiveSymbols($recentScope),
+                    'max_symbols_applied' => $cap,
+                ];
             }
         }
 
         $ibkrSymbols = $this->queryActiveSymbols($cap);
         if ($ibkrSymbols !== []) {
-            return ['symbols' => $ibkrSymbols, 'source' => 'db'];
+            return [
+                'symbols' => $ibkrSymbols,
+                'source' => 'db',
+                'total_available' => $this->countActiveSymbols(),
+                'max_symbols_applied' => $cap,
+            ];
         }
 
-        return ['symbols' => $this->resolveWorkflowSymbols(), 'source' => 'workflow_symbols'];
+        $symbols = $this->resolveWorkflowSymbols();
+
+        return ['symbols' => $symbols, 'source' => 'workflow_symbols', 'total_available' => count($symbols), 'max_symbols_applied' => null];
     }
 
     /**
@@ -120,77 +134,295 @@ class WorkflowDailyFetchService
     }
 
     /**
+     * @param  null|callable(\Illuminate\Database\Eloquent\Builder):void  $scope
+     */
+    private function countActiveSymbols(?callable $scope = null): int
+    {
+        $symbolQuery = Symbol::query()->where('is_active', true);
+
+        if ($scope !== null) {
+            $scope($symbolQuery);
+        }
+
+        return $symbolQuery->count();
+    }
+
+    /**
      * @param  array<int,string>|null  $symbols
      */
     public function fetchDailyBarsToDefaultSnapshotPath(?array $symbols = null): string
     {
+        $result = $this->fetchDailyBarsBatchedToDefaultSnapshotPath($symbols);
+
+        return $result['snapshot_path'];
+    }
+
+    /**
+     * @param  array<int,string>|null  $symbols
+     * @param  null|callable(string,string):void  $output
+     * @return array{snapshot_path:string,batch_count:int,symbols_requested:int,symbols_returned:int,valid_symbols:int,error_symbols:int,batches:array<int,array<string,mixed>>,stopped_early:bool,met_min_valid_symbols:bool,min_valid_symbols:int}
+     */
+    public function fetchDailyBarsBatchedToDefaultSnapshotPath(?array $symbols = null, ?callable $output = null): array
+    {
         $symbols ??= $this->resolveWorkflowSymbols();
+        $symbols = array_values(array_filter(array_map(static fn (string $symbol): string => strtoupper(trim($symbol)), $symbols)));
+
+        if ($symbols === []) {
+            throw new InvalidArgumentException('No symbols were provided for daily fetch.');
+        }
+
         $outputPath = $this->resolveSnapshotPath();
+        $partsDirectory = storage_path('app/daily_snapshot_parts');
         $pythonExecutable = $this->resolvePythonExecutable();
         $resolvedBasePath = $this->resolvePythonIbkrBasePath();
-
         $scriptPath = $resolvedBasePath.'/scripts/fetch_daily_bars.py';
 
         if (! is_file($scriptPath)) {
             throw new RuntimeException('Daily fetch script not found at: '.$scriptPath);
         }
 
-        $symbolBatches = array_chunk($symbols, self::DAILY_FETCH_MAX_SYMBOLS_PER_CALL);
-        $mergedPayload = null;
+        $batchSize = $this->resolvePositiveIntegerEnv('DAILY_FETCH_BATCH_SIZE', 100);
+        $batchTimeoutSeconds = $this->resolvePositiveIntegerEnv('DAILY_FETCH_BATCH_TIMEOUT_SECONDS', 180);
+        $maxTotalSeconds = $this->resolvePositiveIntegerEnv('DAILY_FETCH_MAX_TOTAL_SECONDS', 1800);
+        $minValidSymbols = $this->resolvePositiveIntegerEnv('DAILY_FETCH_MIN_VALID_SYMBOLS', 1);
+        $stopOnBatchFailure = $this->resolveBooleanEnv('DAILY_FETCH_STOP_ON_BATCH_FAILURE', false);
+
+        $this->preparePartsDirectory($partsDirectory);
+
+        $symbolBatches = array_chunk($symbols, $batchSize);
+        $totalBatches = count($symbolBatches);
+        $symbolsPayloads = [];
+        $batchSummaries = [];
+        $validSymbols = 0;
+        $errorSymbols = 0;
+        $stoppedEarly = false;
+        $startedAt = microtime(true);
+        $mode = 'paper';
+
+        $this->emit($output, 'line', 'Daily fetch batch size: '.$batchSize);
+        $this->emit($output, 'line', 'Daily fetch batch timeout seconds: '.$batchTimeoutSeconds);
+        $this->emit($output, 'line', 'Daily fetch max total seconds: '.$maxTotalSeconds);
+        $this->emit($output, 'line', 'Daily fetch minimum valid symbols: '.$minValidSymbols);
+        $this->emit($output, 'line', 'Daily fetch stop on batch failure: '.($stopOnBatchFailure ? 'true' : 'false'));
+        $this->emit($output, 'line', 'Total batches: '.$totalBatches);
 
         foreach ($symbolBatches as $batchIndex => $symbolBatch) {
-            $batchOutputPath = count($symbolBatches) === 1
-                ? $outputPath
-                : storage_path(sprintf('app/daily_snapshot_part_%d.json', $batchIndex + 1));
+            $elapsedBeforeBatch = (int) floor(microtime(true) - $startedAt);
+            if ($elapsedBeforeBatch >= $maxTotalSeconds) {
+                $stoppedEarly = true;
+                $this->emit($output, 'warn', sprintf('Daily fetch total timeout reached after %d seconds; stopping additional batches.', $elapsedBeforeBatch));
+                break;
+            }
+
+            $batchNumber = $batchIndex + 1;
+            $batchOutputPath = $partsDirectory.'/'.sprintf('daily_snapshot_part_%03d.json', $batchNumber);
+            $batchStartedAt = microtime(true);
+            $this->emit($output, 'line', sprintf('Batch %d/%d started: %d symbols', $batchNumber, $totalBatches, count($symbolBatch)));
 
             $command = [$pythonExecutable, $scriptPath, ...$symbolBatch, '--output', $batchOutputPath];
             $process = new Process($command, base_path());
-            $process->setTimeout(180.0);
-            $process->run();
+            $process->setTimeout((float) $batchTimeoutSeconds);
 
-            if (! $process->isSuccessful()) {
-                $errorOutput = trim($process->getErrorOutput());
-                $stdOutput = trim($process->getOutput());
-                $message = $errorOutput !== '' ? $errorOutput : $stdOutput;
-                $commandLine = $process->getCommandLine();
-                $exitCode = $process->getExitCode();
+            try {
+                $process->run();
+            } catch (ProcessTimedOutException) {
+                $batchElapsed = (int) max(1, ceil(microtime(true) - $batchStartedAt));
+                $batchSummaries[] = [
+                    'batch' => $batchNumber,
+                    'requested' => count($symbolBatch),
+                    'returned' => 0,
+                    'valid' => 0,
+                    'errors' => count($symbolBatch),
+                    'status' => 'timeout',
+                    'elapsed_seconds' => $batchElapsed,
+                ];
+                $errorSymbols += count($symbolBatch);
+                $this->emit($output, 'error', sprintf('Batch %d failed: timeout after %d seconds', $batchNumber, $batchTimeoutSeconds));
 
-                if ($message === '') {
-                    $message = sprintf(
-                        'python process exited without output (exit_code=%s, command=%s)',
-                        $exitCode !== null ? (string) $exitCode : 'null',
-                        $commandLine
-                    );
+                if ($stopOnBatchFailure) {
+                    $stoppedEarly = true;
+                    break;
                 }
 
-                throw new RuntimeException('Daily fetch failed: '.$message);
+                continue;
+            }
+
+            $batchElapsed = (int) max(0, round(microtime(true) - $batchStartedAt));
+
+            if (! $process->isSuccessful()) {
+                $message = trim($process->getErrorOutput()) !== '' ? trim($process->getErrorOutput()) : trim($process->getOutput());
+                if ($message === '') {
+                    $message = 'python process exited with code '.($process->getExitCode() ?? 'null');
+                }
+
+                $batchSummaries[] = [
+                    'batch' => $batchNumber,
+                    'requested' => count($symbolBatch),
+                    'returned' => 0,
+                    'valid' => 0,
+                    'errors' => count($symbolBatch),
+                    'status' => 'failed',
+                    'elapsed_seconds' => $batchElapsed,
+                    'error' => $message,
+                ];
+                $errorSymbols += count($symbolBatch);
+                $this->emit($output, 'error', sprintf('Batch %d failed: %s', $batchNumber, $message));
+
+                if ($stopOnBatchFailure) {
+                    $stoppedEarly = true;
+                    break;
+                }
+
+                continue;
             }
 
             if (! is_file($batchOutputPath)) {
-                throw new RuntimeException('Daily fetch completed but output file was not created: '.$batchOutputPath);
+                $message = 'Daily fetch completed but output file was not created: '.$batchOutputPath;
+                $batchSummaries[] = [
+                    'batch' => $batchNumber,
+                    'requested' => count($symbolBatch),
+                    'returned' => 0,
+                    'valid' => 0,
+                    'errors' => count($symbolBatch),
+                    'status' => 'failed',
+                    'elapsed_seconds' => $batchElapsed,
+                    'error' => $message,
+                ];
+                $errorSymbols += count($symbolBatch);
+                $this->emit($output, 'error', sprintf('Batch %d failed: %s', $batchNumber, $message));
+
+                if ($stopOnBatchFailure) {
+                    $stoppedEarly = true;
+                    break;
+                }
+
+                continue;
             }
 
-            $batchPayload = $this->readSnapshotPayload($batchOutputPath);
+            try {
+                $batchPayload = $this->readSnapshotPayload($batchOutputPath);
+            } catch (RuntimeException $exception) {
+                $batchSummaries[] = [
+                    'batch' => $batchNumber,
+                    'requested' => count($symbolBatch),
+                    'returned' => 0,
+                    'valid' => 0,
+                    'errors' => count($symbolBatch),
+                    'status' => 'failed',
+                    'elapsed_seconds' => $batchElapsed,
+                    'error' => $exception->getMessage(),
+                ];
+                $errorSymbols += count($symbolBatch);
+                $this->emit($output, 'error', sprintf('Batch %d failed: %s', $batchNumber, $exception->getMessage()));
+
+                if ($stopOnBatchFailure) {
+                    $stoppedEarly = true;
+                    break;
+                }
+
+                continue;
+            }
+
+            if (isset($batchPayload['mode']) && is_string($batchPayload['mode']) && trim($batchPayload['mode']) !== '') {
+                $mode = $batchPayload['mode'];
+            }
+
             if (! isset($batchPayload['symbols']) || ! is_array($batchPayload['symbols'])) {
-                throw new RuntimeException('Daily fetch output does not contain a valid symbols array: '.$batchOutputPath);
+                $message = 'Daily fetch output does not contain a valid symbols array: '.$batchOutputPath;
+                $batchSummaries[] = [
+                    'batch' => $batchNumber,
+                    'requested' => count($symbolBatch),
+                    'returned' => 0,
+                    'valid' => 0,
+                    'errors' => count($symbolBatch),
+                    'status' => 'failed',
+                    'elapsed_seconds' => $batchElapsed,
+                    'error' => $message,
+                ];
+                $errorSymbols += count($symbolBatch);
+                $this->emit($output, 'error', sprintf('Batch %d failed: %s', $batchNumber, $message));
+
+                if ($stopOnBatchFailure) {
+                    $stoppedEarly = true;
+                    break;
+                }
+
+                continue;
             }
 
-            if ($mergedPayload === null) {
-                $mergedPayload = $batchPayload;
-            } else {
-                $mergedPayload['symbols'] = array_merge($mergedPayload['symbols'] ?? [], $batchPayload['symbols']);
+            $batchSymbols = $batchPayload['symbols'];
+
+            $batchValid = 0;
+            $batchErrors = 0;
+            foreach ($batchSymbols as $symbolPayload) {
+                if (! is_array($symbolPayload)) {
+                    continue;
+                }
+
+                $normalizedSymbolPayload = $this->normalizeSymbolPayload($symbolPayload);
+                if ($this->isValidSymbolPayload($normalizedSymbolPayload)) {
+                    $batchValid++;
+                } else {
+                    $batchErrors++;
+                }
+
+                $symbolsPayloads[] = $normalizedSymbolPayload;
+            }
+
+            $batchErrors += max(0, count($symbolBatch) - count($batchSymbols));
+            $validSymbols += $batchValid;
+            $errorSymbols += $batchErrors;
+            $batchSummaries[] = [
+                'batch' => $batchNumber,
+                'requested' => count($symbolBatch),
+                'returned' => count($batchSymbols),
+                'valid' => $batchValid,
+                'errors' => $batchErrors,
+                'status' => 'ok',
+                'elapsed_seconds' => $batchElapsed,
+            ];
+
+            $this->emit($output, 'line', sprintf('Batch %d/%d completed: valid=%d errors=%d elapsed=%ds', $batchNumber, $totalBatches, $batchValid, $batchErrors, $batchElapsed));
+
+            $elapsedAfterBatch = (int) floor(microtime(true) - $startedAt);
+            if ($elapsedAfterBatch >= $maxTotalSeconds && $batchNumber < $totalBatches) {
+                $stoppedEarly = true;
+                $this->emit($output, 'warn', sprintf('Daily fetch total timeout reached after %d seconds; stopping additional batches.', $elapsedAfterBatch));
+                break;
             }
         }
 
-        if ($mergedPayload === null) {
-            throw new RuntimeException('Daily fetch failed: no payload was produced.');
-        }
+        $mergedPayload = [
+            'mode' => $mode,
+            'fetched_at_utc' => now()->utc()->toISOString(),
+            'source' => 'batched_daily_fetch',
+            'batch_count' => count($batchSummaries),
+            'symbols_requested' => count($symbols),
+            'symbols_returned' => count($symbolsPayloads),
+            'valid_symbols' => $validSymbols,
+            'error_symbols' => $errorSymbols,
+            'batches' => $batchSummaries,
+            'symbols' => $symbolsPayloads,
+        ];
 
-        if (count($symbolBatches) > 1) {
-            file_put_contents($outputPath, json_encode($mergedPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
-        }
+        file_put_contents($outputPath, json_encode($mergedPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 
-        return $outputPath;
+        $this->emit($output, 'line', 'Merged daily snapshot: '.$outputPath);
+        $this->emit($output, 'line', 'Valid symbols fetched: '.$validSymbols);
+        $this->emit($output, 'line', 'Error symbols fetched: '.$errorSymbols);
+
+        return [
+            'snapshot_path' => $outputPath,
+            'batch_count' => count($batchSummaries),
+            'symbols_requested' => count($symbols),
+            'symbols_returned' => count($symbolsPayloads),
+            'valid_symbols' => $validSymbols,
+            'error_symbols' => $errorSymbols,
+            'batches' => $batchSummaries,
+            'stopped_early' => $stoppedEarly,
+            'met_min_valid_symbols' => $validSymbols >= $minValidSymbols,
+            'min_valid_symbols' => $minValidSymbols,
+        ];
     }
 
     public function countSuccessfulSymbolsFromSnapshot(string $snapshotPath): int
@@ -237,6 +469,84 @@ class WorkflowDailyFetchService
         }
 
         return $payload;
+    }
+
+    /**
+     * @param  array<string,mixed>  $symbolPayload
+     * @return array<string,mixed>
+     */
+    private function normalizeSymbolPayload(array $symbolPayload): array
+    {
+        $bars = $symbolPayload['bars'] ?? null;
+        if (($symbolPayload['status'] ?? null) === 'ok' && (! is_array($bars) || $bars === [])) {
+            $symbolPayload['status'] = 'error';
+            $symbolPayload['error'] = ($symbolPayload['error'] ?? null) ?: 'No daily bars returned.';
+            $symbolPayload['bars'] = is_array($bars) ? $bars : [];
+        }
+
+        return $symbolPayload;
+    }
+
+    /**
+     * @param  array<string,mixed>  $symbolPayload
+     */
+    private function isValidSymbolPayload(array $symbolPayload): bool
+    {
+        $bars = $symbolPayload['bars'] ?? null;
+
+        return ($symbolPayload['status'] ?? null) === 'ok' && is_array($bars) && $bars !== [];
+    }
+
+    private function resolvePositiveIntegerEnv(string $key, int $default): int
+    {
+        $rawValue = env($key, $default);
+        if (is_int($rawValue)) {
+            return $rawValue > 0 ? $rawValue : $default;
+        }
+
+        $normalizedValue = trim((string) $rawValue);
+        if ($normalizedValue === '' || filter_var($normalizedValue, FILTER_VALIDATE_INT) === false) {
+            return $default;
+        }
+
+        $value = (int) $normalizedValue;
+
+        return $value > 0 ? $value : $default;
+    }
+
+    private function resolveBooleanEnv(string $key, bool $default): bool
+    {
+        $rawValue = env($key, $default);
+        if (is_bool($rawValue)) {
+            return $rawValue;
+        }
+
+        $parsedValue = filter_var($rawValue, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        return $parsedValue ?? $default;
+    }
+
+    private function preparePartsDirectory(string $partsDirectory): void
+    {
+        if (! is_dir($partsDirectory) && ! mkdir($partsDirectory, 0755, true) && ! is_dir($partsDirectory)) {
+            throw new RuntimeException('Unable to create daily snapshot parts directory: '.$partsDirectory);
+        }
+
+        foreach (glob($partsDirectory.'/daily_snapshot_part_*.json') ?: [] as $partFile) {
+            if (is_file($partFile)) {
+                unlink($partFile);
+            }
+        }
+    }
+
+    /**
+     * @param  null|callable(string,string):void  $output
+     */
+    private function emit(?callable $output, string $level, string $message): void
+    {
+        if ($output !== null) {
+            $output($level, $message);
+        }
     }
 
     /**
