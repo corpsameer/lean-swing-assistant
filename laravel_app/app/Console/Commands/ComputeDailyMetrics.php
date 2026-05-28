@@ -78,7 +78,14 @@ class ComputeDailyMetrics extends Command
                 }
 
                 $bars = Arr::get($symbolData, 'bars');
-                if (! is_array($bars) || count($bars) < 50) {
+                if (! is_array($bars) || $bars === []) {
+                    $skipped++;
+                    $this->line("SKIP {$symbol->symbol}: source snapshot has empty bars");
+
+                    continue;
+                }
+
+                if (count($bars) < 50) {
                     $skipped++;
                     $this->line("SKIP {$symbol->symbol}: insufficient valid bars");
 

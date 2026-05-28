@@ -176,7 +176,8 @@ class WorkflowDailyFetchService
 
         $successCount = 0;
         foreach ($payload['symbols'] as $symbolPayload) {
-            if (is_array($symbolPayload) && (($symbolPayload['status'] ?? null) === 'ok')) {
+            $bars = is_array($symbolPayload) ? ($symbolPayload['bars'] ?? null) : null;
+            if (is_array($symbolPayload) && (($symbolPayload['status'] ?? null) === 'ok') && is_array($bars) && $bars !== []) {
                 $successCount++;
             }
         }

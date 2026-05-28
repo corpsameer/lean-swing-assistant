@@ -14,6 +14,18 @@ from app.config import load_settings
 from app.ibkr_client import IBKRClient
 
 
+def classify_ibkr_error(errors: list[dict[str, object]]) -> str | None:
+    for row in errors:
+        code = int(row.get("error_code", 0) or 0)
+        message = str(row.get("error_message", "") or "").lower()
+        if "different ip address" in message or "duplicate" in message:
+            return "duplicate_session"
+        if code == 162:
+            return "ibkr_error_162"
+
+    return None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch daily bars from IBKR for one or more symbols.")
     parser.add_argument("symbols", nargs="+", help="Ticker symbols, e.g. AAPL MSFT")
@@ -43,10 +55,25 @@ def main() -> int:
             symbol = symbol.upper().strip()
             try:
                 bars = client.fetch_daily_bars(symbol=symbol, lookback_days=args.lookback_days)
-                payload["symbols"].append({"symbol": symbol, "status": "ok", "bars": bars})
+                errors = client.pop_recent_errors()
+                if bars == []:
+                    error = classify_ibkr_error(errors) or "empty_bars"
+                    payload["symbols"].append(
+                        {"symbol": symbol, "status": "error", "error": error, "bars": []}
+                    )
+                    continue
+
+                payload["symbols"].append({"symbol": symbol, "status": "ok", "error": None, "bars": bars})
             except Exception as exc:
+                errors = client.pop_recent_errors()
+                error = classify_ibkr_error(errors)
                 payload["symbols"].append(
-                    {"symbol": symbol, "status": "error", "error": str(exc), "bars": []}
+                    {
+                        "symbol": symbol,
+                        "status": "error",
+                        "error": error or str(exc),
+                        "bars": [],
+                    }
                 )
     except Exception as exc:
         for symbol in args.symbols:
