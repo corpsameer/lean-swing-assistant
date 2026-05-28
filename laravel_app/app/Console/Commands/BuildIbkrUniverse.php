@@ -64,6 +64,7 @@ class BuildIbkrUniverse extends Command
 
         $inserted = 0;
         $updated = 0;
+        $reactivated = 0;
         $seenSymbols = [];
 
         foreach ($symbols as $row) {
@@ -107,10 +108,14 @@ class BuildIbkrUniverse extends Command
                 Symbol::query()->create(array_merge(['symbol' => $symbol], $updates));
                 $inserted++;
             } else {
+                $wasInactive = ! (bool) $existing->is_active;
                 $existing->fill($updates);
                 if ($existing->isDirty()) {
                     $existing->save();
                     $updated++;
+                    if ($wasInactive && (bool) $existing->is_active) {
+                        $reactivated++;
+                    }
                 }
             }
         }
@@ -121,6 +126,9 @@ class BuildIbkrUniverse extends Command
         $this->line('Unique symbols: '.$unique);
         $this->line('Symbols inserted: '.$inserted);
         $this->line('Symbols updated: '.$updated);
+        $this->line('Symbols reactivated: '.$reactivated);
+        $this->line('Symbols deactivated: 0');
+        $this->line('Missing symbols were not deactivated.');
         $this->line('Errors: '.count($errors));
 
         foreach ($errors as $error) {
