@@ -21,6 +21,10 @@ class RunIntradayPromptValidate extends Command
     ): int
     {
         try {
+            $tradeCandidateMinScore = config('services.trade_candidate.min_score', 75);
+            $tradeCandidateMinScore = is_numeric($tradeCandidateMinScore) ? (float) $tradeCandidateMinScore : 75.0;
+            $this->line('Trade candidate min score: '.$this->formatScore($tradeCandidateMinScore));
+
             $health = $ibkrHealthService->check();
             if (! $health['ok']) {
                 $this->error('IBKR health check failed; skipping workflow safely.');
@@ -78,8 +82,17 @@ class RunIntradayPromptValidate extends Command
         $this->line('wait count: '.$summary['wait_count']);
         $this->line('reject count: '.$summary['reject_count']);
         $this->line('trade setups created: '.$summary['trade_setups_created']);
+        $this->line('skipped_score_below_threshold: '.($summary['skipped_score_below_threshold'] ?? 0));
+        $this->line('skipped_missing_score: '.($summary['skipped_missing_score'] ?? 0));
         $this->line('errors: '.$summary['errors']);
 
         return self::SUCCESS;
+    }
+
+    private function formatScore(float $score): string
+    {
+        $formatted = number_format($score, 3, '.', '');
+
+        return rtrim(rtrim($formatted, '0'), '.');
     }
 }

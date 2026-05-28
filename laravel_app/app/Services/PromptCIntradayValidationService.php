@@ -23,10 +23,12 @@ class PromptCIntradayValidationService
     ) {}
 
     /**
-     * @return array{run_id:int,active_candidates_scanned:int,candidates_sent_to_model:int,enter_now_count:int,wait_count:int,reject_count:int,trade_setups_created:int,errors:int}
+     * @return array{run_id:int,trade_candidate_min_score:float,active_candidates_scanned:int,candidates_sent_to_model:int,enter_now_count:int,wait_count:int,reject_count:int,trade_setups_created:int,skipped_score_below_threshold:int,skipped_missing_score:int,errors:int}
      */
     public function run(): array
     {
+        $tradeCandidateMinScore = $this->tradeCandidateMinScore();
+
         $run = Run::create([
             'run_type' => 'intraday_validate',
             'status' => 'running',
@@ -35,12 +37,15 @@ class PromptCIntradayValidationService
 
         $summary = [
             'run_id' => $run->id,
+            'trade_candidate_min_score' => $tradeCandidateMinScore,
             'active_candidates_scanned' => 0,
             'candidates_sent_to_model' => 0,
             'enter_now_count' => 0,
             'wait_count' => 0,
             'reject_count' => 0,
             'trade_setups_created' => 0,
+            'skipped_score_below_threshold' => 0,
+            'skipped_missing_score' => 0,
             'errors' => 0,
         ];
 
@@ -79,7 +84,7 @@ class PromptCIntradayValidationService
                 throw new RuntimeException('Model response missing validated_candidates array.');
             }
 
-            DB::transaction(function () use ($run, $openAiResult, $validatedCandidates, $candidateBySymbol, &$summary): void {
+            DB::transaction(function () use ($run, $openAiResult, $validatedCandidates, $candidateBySymbol, $tradeCandidateMinScore, &$summary): void {
                 PromptLog::create([
                     'run_id' => $run->id,
                     'symbol_id' => null,
@@ -136,31 +141,67 @@ class PromptCIntradayValidationService
                     if ($decision === 'enter_now') {
                         $summary['enter_now_count']++;
 
-                        $activeGuard = $this->activeTradeGuardService->findActiveForSymbol($candidate->symbol_id);
-                        if (! $activeGuard['has_active']) {
-                            $tradeSetup = TradeSetup::create([
-                                'symbol_id' => $candidate->symbol_id,
-                                'source_candidate_id' => $candidate->id,
-                                'status' => 'planned',
-                                'entry_price' => (float) $entryPrice,
-                                'stop_price' => (float) $stopPrice,
-                                'target1_price' => (float) $target1Price,
-                                'target2_price' => (float) $target2Price,
-                                'notes' => trim($riskNote).' | '.trim($reasoningText),
-                            ]);
-
-                            $summary['trade_setups_created']++;
-
-                            DB::afterCommit(function () use ($tradeSetup, $symbol): void {
-                                $this->paperTradeExecutionService->executeForSetup($tradeSetup, $symbol);
-                            });
-                        } else {
-                            Log::info(sprintf(
-                                'Skipping %s: active setup/order already exists (trade_setup_id=%s, order_id=%s)',
+                        $candidateScore = $this->candidateScoreTotal($candidate);
+                        if ($candidateScore === null) {
+                            $summary['skipped_missing_score']++;
+                            $message = sprintf(
+                                '%s skipped: missing score_total below trade threshold %s',
                                 $symbol,
-                                $activeGuard['trade_setup_id'] ?? 'null',
-                                $activeGuard['order_id'] ?? 'null',
-                            ));
+                                $this->formatScore($tradeCandidateMinScore),
+                            );
+                            $summary['skipped_candidates'][] = $message;
+                            Log::info($message, [
+                                'reason' => 'missing_score_total',
+                                'symbol' => $symbol,
+                                'candidate_id' => $candidate->id,
+                                'candidate_score' => null,
+                                'trade_candidate_min_score' => $tradeCandidateMinScore,
+                            ]);
+                            $this->markCandidateGuardReason($candidate, $validatedCandidate, 'missing_score_total', null, $tradeCandidateMinScore);
+                        } elseif ($candidateScore < $tradeCandidateMinScore) {
+                            $summary['skipped_score_below_threshold']++;
+                            $message = sprintf(
+                                '%s skipped: score %s below trade threshold %s',
+                                $symbol,
+                                $this->formatScore($candidateScore),
+                                $this->formatScore($tradeCandidateMinScore),
+                            );
+                            $summary['skipped_candidates'][] = $message;
+                            Log::info($message, [
+                                'reason' => 'score_below_trade_threshold',
+                                'symbol' => $symbol,
+                                'candidate_id' => $candidate->id,
+                                'candidate_score' => $candidateScore,
+                                'trade_candidate_min_score' => $tradeCandidateMinScore,
+                            ]);
+                            $this->markCandidateGuardReason($candidate, $validatedCandidate, 'score_below_trade_threshold', $candidateScore, $tradeCandidateMinScore);
+                        } else {
+                            $activeGuard = $this->activeTradeGuardService->findActiveForSymbol($candidate->symbol_id);
+                            if (! $activeGuard['has_active']) {
+                                $tradeSetup = TradeSetup::create([
+                                    'symbol_id' => $candidate->symbol_id,
+                                    'source_candidate_id' => $candidate->id,
+                                    'status' => 'planned',
+                                    'entry_price' => (float) $entryPrice,
+                                    'stop_price' => (float) $stopPrice,
+                                    'target1_price' => (float) $target1Price,
+                                    'target2_price' => (float) $target2Price,
+                                    'notes' => trim($riskNote).' | '.trim($reasoningText),
+                                ]);
+
+                                $summary['trade_setups_created']++;
+
+                                DB::afterCommit(function () use ($tradeSetup, $symbol): void {
+                                    $this->paperTradeExecutionService->executeForSetup($tradeSetup, $symbol);
+                                });
+                            } else {
+                                Log::info(sprintf(
+                                    'Skipping %s: active setup/order already exists (trade_setup_id=%s, order_id=%s)',
+                                    $symbol,
+                                    $activeGuard['trade_setup_id'] ?? 'null',
+                                    $activeGuard['order_id'] ?? 'null',
+                                ));
+                            }
                         }
                     }
 
@@ -198,6 +239,51 @@ class PromptCIntradayValidationService
 
             throw $throwable;
         }
+    }
+
+    private function tradeCandidateMinScore(): float
+    {
+        $score = config('services.trade_candidate.min_score', 75);
+
+        return is_numeric($score) ? (float) $score : 75.0;
+    }
+
+    private function candidateScoreTotal(WatchlistCandidate $candidate): ?float
+    {
+        $attributes = $candidate->getAttributes();
+        if (! array_key_exists('score_total', $attributes)) {
+            return null;
+        }
+
+        $score = $attributes['score_total'];
+        if ($score === null || ! is_numeric($score)) {
+            return null;
+        }
+
+        return (float) $score;
+    }
+
+    private function markCandidateGuardReason(
+        WatchlistCandidate $candidate,
+        array &$validatedCandidate,
+        string $reason,
+        ?float $candidateScore,
+        float $tradeCandidateMinScore
+    ): void {
+        $validatedCandidate['trade_candidate_guard'] = [
+            'reason' => $reason,
+            'score_total' => $candidateScore,
+            'min_score' => $tradeCandidateMinScore,
+        ];
+
+        $candidate->prompt_output_json = $validatedCandidate;
+    }
+
+    private function formatScore(float $score): string
+    {
+        $formatted = number_format($score, 3, '.', '');
+
+        return rtrim(rtrim($formatted, '0'), '.');
     }
 
     /**
