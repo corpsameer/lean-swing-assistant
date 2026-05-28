@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\TradeController;
@@ -21,4 +22,5 @@ Route::middleware('auth')->prefix('admin')->group(function () {
     Route::get('/trade-setups', [TradeSetupController::class, 'index']);
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/trades', [TradeController::class, 'index']);
+    Route::get('/analytics', [AnalyticsController::class, 'index']);
 });
