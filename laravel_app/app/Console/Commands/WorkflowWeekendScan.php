@@ -23,8 +23,8 @@ class WorkflowWeekendScan extends Command
                 $this->option('symbols') !== null ? (string) $this->option('symbols') : null
             );
             $symbols = $symbolResolution['symbols'];
-            if ($symbolResolution['source'] === 'ibkr_db') {
-                $this->line('Using DB universe symbols: '.count($symbols).' symbols');
+            if (str_starts_with($symbolResolution['source'], 'ibkr_db')) {
+                $this->line('Using DB universe symbols: '.count($symbols).' symbols (source='.$symbolResolution['source'].')');
             } elseif ($symbolResolution['source'] === 'manual_override') {
                 $this->line('Using manual --symbols override: '.count($symbols).' symbols');
             } else {

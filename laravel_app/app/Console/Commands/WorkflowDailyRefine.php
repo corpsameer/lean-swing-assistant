@@ -23,8 +23,8 @@ class WorkflowDailyRefine extends Command
                 $this->option('symbols') !== null ? (string) $this->option('symbols') : null
             );
             $symbols = $symbolsResolution['symbols'];
-            if ($symbolsResolution['source'] === 'ibkr_db') {
-                $this->line('Using DB universe symbols: '.count($symbols).' symbols');
+            if (str_starts_with($symbolsResolution['source'], 'ibkr_db')) {
+                $this->line('Using DB universe symbols: '.count($symbols).' symbols (source='.$symbolsResolution['source'].')');
             } elseif ($symbolsResolution['source'] === 'manual_override') {
                 $this->line('Using manual --symbols override: '.count($symbols).' symbols');
             } else {
