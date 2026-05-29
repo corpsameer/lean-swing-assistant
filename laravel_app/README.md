@@ -257,11 +257,12 @@ Detailed schedule entries:
   - Weekdays 05:30 `America/New_York`
   - log: `storage/logs/scheduler-daily-refine.log`
 - `prompt:intraday-validate`
-  - Weekdays every 5 minutes, between 09:30 and 15:45 `America/New_York`
+  - US weekdays every 5 minutes, between 09:30 and 15:45 `America/New_York`
   - log: `storage/logs/scheduler-intraday-validate.log`
 - `trades:simulate-status`
-  - Weekdays every 2 minutes, between 09:30 and 16:05 `America/New_York`
-  - Weekdays final run at 16:10 `America/New_York`
+  - US weekdays every 2 minutes, between 09:30 and 16:05 `America/New_York`
+  - US weekdays final run at 16:10 `America/New_York`
+  - Command-level guard enforces the full 09:30-16:10 ET window
   - log: `storage/logs/scheduler-simulate-status.log`
 - `prompt:trade-review --limit=20`
   - Weekdays 16:30 `America/New_York` (after final simulated status sync)
@@ -271,6 +272,7 @@ Safety notes:
 - Scheduler wiring only runs existing commands; it does not add live-trading paths.
 - Execution remains simulated unless existing environment/commands are changed externally.
 - `withoutOverlapping()` is applied on all scheduled commands, with 180-240 minute locks on heavy universe/workflow jobs and a 60 minute lock on trade review.
+- Command-level guards enforce `prompt:intraday-validate` on US weekdays 09:30-15:45 ET and `trades:simulate-status` on US weekdays 09:30-16:10 ET, skipping safely outside those windows.
 - Existing duplicate active setup guard continues to protect repeated intraday runs for same symbol.
 - `universe:build-ibkr` is retained for manual testing only and is not scheduled.
 - Weekend scan resolves symbols from active DB universe first (Nasdaq-built universe), then only falls back to `WORKFLOW_SYMBOLS` if needed.

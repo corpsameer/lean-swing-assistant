@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\SimulatedTradeStatusService;
+use App\Support\MarketWindow;
 use Illuminate\Console\Command;
 
 class SimulateTradeStatusCommand extends Command
@@ -18,6 +19,17 @@ class SimulateTradeStatusCommand extends Command
 
     public function handle(): int
     {
+        $windowStart = (string) config('services.market_window.simulate_status_start', '09:30');
+        $windowEnd = (string) config('services.market_window.simulate_status_end', '16:10');
+
+        if (! MarketWindow::isWithinEtWindow($windowStart, $windowEnd)) {
+            $nowEt = MarketWindow::nowEtString();
+            $timezone = MarketWindow::timezone();
+            $this->line("Outside simulate status window. now_et={$nowEt} {$timezone}. Skipping.");
+
+            return self::SUCCESS;
+        }
+
         $summary = $this->service->sync();
         foreach ($summary['debug_lines'] as $line) {
             $this->line($line);

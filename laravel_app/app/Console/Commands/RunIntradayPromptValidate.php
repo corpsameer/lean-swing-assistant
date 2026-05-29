@@ -6,6 +6,7 @@ use App\Models\Run;
 use App\Services\IbkrHealthService;
 use App\Services\IntradayRefreshService;
 use App\Services\PromptCIntradayValidationService;
+use App\Support\MarketWindow;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -21,6 +22,15 @@ class RunIntradayPromptValidate extends Command
         IbkrHealthService $ibkrHealthService
     ): int
     {
+        $windowStart = (string) config('services.market_window.intraday_validate_start', '09:30');
+        $windowEnd = (string) config('services.market_window.intraday_validate_end', '15:45');
+
+        if (! MarketWindow::isWithinEtWindow($windowStart, $windowEnd)) {
+            $this->skipOutsideIntradayWindow($windowStart, $windowEnd);
+
+            return self::SUCCESS;
+        }
+
         $serviceStarted = false;
 
         try {
@@ -125,6 +135,23 @@ class RunIntradayPromptValidate extends Command
             'completed_at' => now('UTC'),
             'meta_json' => $meta,
         ]);
+    }
+
+    private function skipOutsideIntradayWindow(string $windowStart, string $windowEnd): void
+    {
+        $nowEt = MarketWindow::nowEtString();
+        $timezone = MarketWindow::timezone();
+        $this->line("Outside intraday validation window. now_et={$nowEt} {$timezone}. Skipping.");
+
+        try {
+            $this->recordRun('skipped', [
+                'message' => 'Outside intraday validation window; skipped safely.',
+                'now_et' => $nowEt,
+                'window' => "{$windowStart}-{$windowEnd} {$timezone}",
+            ]);
+        } catch (Throwable $throwable) {
+            $this->warn('Unable to record skipped intraday validation run: '.$throwable->getMessage());
+        }
     }
 
     private function formatScore(float $score): string
