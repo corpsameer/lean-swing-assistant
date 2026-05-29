@@ -64,7 +64,13 @@ class PromptCIntradayValidationService
             $metricsBySymbolId = $this->latestMetricsBySymbolId($symbolIds, 'derived_daily_metrics');
             $intradayBySymbolId = $this->latestMetricsBySymbolId($symbolIds, 'intraday');
 
-            [$eligibleRows, $candidateBySymbol, $skippedCandidates] = $this->buildEligiblePayloadRows($candidates, $metricsBySymbolId, $intradayBySymbolId);
+            [$eligibleRows, $candidateBySymbol, $skippedCandidates] = $this->buildEligiblePayloadRows(
+                $candidates,
+                $metricsBySymbolId,
+                $intradayBySymbolId,
+                $tradeCandidateMinScore,
+                $summary
+            );
             $summary['skipped_candidates'] = $skippedCandidates;
 
             $summary['candidates_sent_to_model'] = count($eligibleRows);
@@ -145,9 +151,8 @@ class PromptCIntradayValidationService
                         if ($candidateScore === null) {
                             $summary['skipped_missing_score']++;
                             $message = sprintf(
-                                '%s skipped: missing score_total below trade threshold %s',
+                                '%s skipped: missing score_total',
                                 $symbol,
-                                $this->formatScore($tradeCandidateMinScore),
                             );
                             $summary['skipped_candidates'][] = $message;
                             Log::info($message, [
@@ -315,7 +320,13 @@ class PromptCIntradayValidationService
      * @param  array<int, array<string, mixed>>  $intradayBySymbolId
      * @return array{0:array<int,array<string,mixed>>,1:Collection<string,WatchlistCandidate>,2:array<int,string>}
      */
-    private function buildEligiblePayloadRows(Collection $candidates, array $metricsBySymbolId, array $intradayBySymbolId): array
+    private function buildEligiblePayloadRows(
+        Collection $candidates,
+        array $metricsBySymbolId,
+        array $intradayBySymbolId,
+        float $tradeCandidateMinScore,
+        array &$summary
+    ): array
     {
         $nearBandTolerancePercent = (float) config('services.intraday_validation.near_band_tolerance_percent', 0.75);
         $maxExtensionPercent = (float) config('services.intraday_validation.max_extension_percent', 1.5);
@@ -326,6 +337,41 @@ class PromptCIntradayValidationService
 
         foreach ($candidates as $candidate) {
             $symbol = (string) $candidate->symbol->symbol;
+
+            // Trade candidate score threshold is a pre-model guard to avoid spending Prompt C calls on weak candidates.
+            $candidateScore = $this->candidateScoreTotal($candidate);
+            if ($candidateScore === null) {
+                $summary['skipped_missing_score']++;
+                $message = sprintf('%s skipped: missing score_total', $symbol);
+                $skippedCandidates[] = $message;
+                Log::info($message, [
+                    'reason' => 'missing_score_total',
+                    'symbol' => $symbol,
+                    'candidate_id' => $candidate->id,
+                    'candidate_score' => null,
+                    'trade_candidate_min_score' => $tradeCandidateMinScore,
+                ]);
+                continue;
+            }
+
+            if ($candidateScore < $tradeCandidateMinScore) {
+                $summary['skipped_score_below_threshold']++;
+                $message = sprintf(
+                    '%s skipped: score %s below trade threshold %s',
+                    $symbol,
+                    $this->formatScore($candidateScore),
+                    $this->formatScore($tradeCandidateMinScore),
+                );
+                $skippedCandidates[] = $message;
+                Log::info($message, [
+                    'reason' => 'score_below_trade_threshold',
+                    'symbol' => $symbol,
+                    'candidate_id' => $candidate->id,
+                    'candidate_score' => $candidateScore,
+                    'trade_candidate_min_score' => $tradeCandidateMinScore,
+                ]);
+                continue;
+            }
 
             $triggerBandLow = $this->toFloat($candidate->trigger_band_low);
             $triggerBandHigh = $this->toFloat($candidate->trigger_band_high);
@@ -357,6 +403,7 @@ class PromptCIntradayValidationService
                 $skippedCandidates[] = sprintf('%s skipped: already extended', $symbol);
                 continue;
             }
+
 
             $eligibleRows[] = [
                 'symbol' => $symbol,
