@@ -98,6 +98,11 @@ class PromptAWeekendRankService
                         throw new RuntimeException("Invalid score_total for symbol: {$symbol}");
                     }
 
+                    $score = (float) $score;
+                    if ($score < 0.0 || $score > 100.0) {
+                        throw new RuntimeException("score_total must be between 0 and 100 for symbol: {$symbol}");
+                    }
+
                     $reasoningText = Arr::get($rankedCandidate, 'reasoning_text');
                     if (! is_string($reasoningText) || trim($reasoningText) === '') {
                         throw new RuntimeException("Invalid reasoning_text for symbol: {$symbol}");
@@ -105,7 +110,8 @@ class PromptAWeekendRankService
 
                     /** @var WatchlistCandidate $candidate */
                     $candidate = $candidateBySymbol->get($symbol);
-                    $candidate->score_total = (float) $score;
+                    // Prompt A score_total is 0–100 for records generated after T17.2.
+                    $candidate->score_total = $score;
 
                     $setupType = Arr::get($rankedCandidate, 'setup_type');
                     if (is_string($setupType) && $setupType !== '') {
@@ -217,7 +223,8 @@ class PromptAWeekendRankService
             'system_prompt' => implode("\n", [
                 'You are Prompt A, a weekend swing-trading candidate ranker.',
                 'Rank only the provided symbols and do not invent symbols.',
-                'Score each candidate from 0 to 30.',
+                'Score each candidate from 0 to 100.',
+                'Score interpretation: 90–100 = elite candidate; 85–89 = strong candidate; 75–84 = valid trade candidate; 60–74 = watch only; below 60 = weak/reject.',
                 'Assign setup_type as breakout or pullback.',
                 'Assign preferred_action as watch, ready_breakout, or ready_pullback.',
                 'Keep reasoning concise and practical.',
