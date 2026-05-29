@@ -23,6 +23,7 @@ class RunWeekendPromptRank extends Command
         }
 
         $this->info('Weekend prompt rank completed.');
+        $this->line('Prompt A score scale: 0–100');
         $this->line('run id: '.$summary['run_id']);
         $this->line('candidates sent: '.$summary['candidates_sent']);
         $this->line('candidates ranked: '.$summary['candidates_ranked']);
