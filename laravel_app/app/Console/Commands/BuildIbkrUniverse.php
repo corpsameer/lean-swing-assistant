@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Run;
 use App\Models\Symbol;
 use App\Services\IbkrHealthService;
 use App\Services\WorkflowDailyFetchService;
@@ -19,10 +20,21 @@ class BuildIbkrUniverse extends Command
 
     public function handle(WorkflowDailyFetchService $fetchService, IbkrHealthService $ibkrHealthService): int
     {
+        $run = Run::create([
+            'run_type' => 'build_ibkr_universe',
+            'status' => 'running',
+            'started_at' => now('UTC'),
+        ]);
+
         $health = $ibkrHealthService->check();
         if (! $health['ok']) {
             $this->error('IBKR health check failed; skipping workflow safely.');
             $this->line('IBKR health details: '.$health['message']);
+            $this->finishRun($run, 'failed', [
+                'message' => 'IBKR health check failed; skipping workflow safely.',
+                'error_message' => $health['message'],
+                'ibkr_health' => $health,
+            ]);
 
             return self::FAILURE;
         }
@@ -31,7 +43,12 @@ class BuildIbkrUniverse extends Command
         $outputPath = storage_path('app/ibkr_universe.json');
         $scriptPath = $fetchService->resolvePythonIbkrBasePath().'/scripts/build_ibkr_universe.py';
         if (! is_file($scriptPath)) {
-            $this->error('IBKR universe builder script not found at: '.$scriptPath);
+            $message = 'IBKR universe builder script not found at: '.$scriptPath;
+            $this->error($message);
+            $this->finishRun($run, 'failed', [
+                'message' => 'IBKR universe builder script not found.',
+                'error_message' => $message,
+            ]);
 
             return self::FAILURE;
         }
@@ -41,13 +58,24 @@ class BuildIbkrUniverse extends Command
         $process->run();
 
         if (! $process->isSuccessful()) {
-            $this->error('Universe build failed: '.trim($process->getErrorOutput()."\n".$process->getOutput()));
+            $message = trim($process->getErrorOutput()."\n".$process->getOutput());
+            $this->error('Universe build failed: '.$message);
+            $this->finishRun($run, 'failed', [
+                'message' => 'Universe build failed.',
+                'error_message' => $message,
+                'exit_code' => $process->getExitCode(),
+            ]);
 
             return self::FAILURE;
         }
 
         if (! is_file($outputPath)) {
-            $this->error('Universe build did not produce output: '.$outputPath);
+            $message = 'Universe build did not produce output: '.$outputPath;
+            $this->error($message);
+            $this->finishRun($run, 'failed', [
+                'message' => 'Universe build did not produce output.',
+                'error_message' => $message,
+            ]);
 
             return self::FAILURE;
         }
@@ -55,6 +83,11 @@ class BuildIbkrUniverse extends Command
         try {
             $payload = json_decode((string) file_get_contents($outputPath), true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $e) {
+            $this->finishRun($run, 'failed', [
+                'message' => 'Universe JSON invalid.',
+                'error_message' => $e->getMessage(),
+            ]);
+
             throw new RuntimeException('Universe JSON invalid: '.$e->getMessage(), 0, $e);
         }
 
@@ -139,10 +172,38 @@ class BuildIbkrUniverse extends Command
 
         if ($unique === 0) {
             $this->error('Universe build returned zero symbols.');
+            $this->finishRun($run, 'failed', [
+                'message' => 'Universe build returned zero symbols.',
+                'raw_symbols_returned' => count($symbols),
+                'unique_symbols' => $unique,
+                'errors' => count($errors),
+            ]);
 
             return self::FAILURE;
         }
 
+        $this->finishRun($run, 'completed', [
+            'message' => 'IBKR universe build completed.',
+            'scanner_codes' => $scannerCodes,
+            'raw_symbols_returned' => count($symbols),
+            'unique_symbols' => $unique,
+            'inserted' => $inserted,
+            'updated' => $updated,
+            'reactivated' => $reactivated,
+            'errors' => count($errors),
+        ]);
+
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function finishRun(Run $run, string $status, array $meta): void
+    {
+        $run->status = $status;
+        $run->completed_at = now('UTC');
+        $run->meta_json = $meta;
+        $run->save();
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Run;
 use App\Services\IbkrHealthService;
 use App\Services\WorkflowDailyFetchService;
 use Illuminate\Console\Command;
@@ -17,11 +18,25 @@ class WorkflowWeekendScan extends Command
 
     public function handle(WorkflowDailyFetchService $dailyFetchService, IbkrHealthService $ibkrHealthService): int
     {
+        $run = Run::create([
+            'run_type' => 'workflow_weekend_scan',
+            'status' => 'running',
+            'started_at' => now('UTC'),
+            'meta_json' => [
+                'message' => 'Workflow started: weekend-scan',
+            ],
+        ]);
+
         $this->info('Starting workflow: weekend-scan');
         $health = $ibkrHealthService->check();
         if (! $health['ok']) {
             $this->error('IBKR health check failed; skipping workflow safely.');
             $this->line('IBKR health details: '.$health['message']);
+            $this->finishRun($run, 'failed', [
+                'message' => 'IBKR health check failed; skipping workflow safely.',
+                'error_message' => $health['message'],
+                'ibkr_health' => $health,
+            ]);
 
             return self::FAILURE;
         }
@@ -49,6 +64,11 @@ class WorkflowWeekendScan extends Command
             $this->line('Step 1/5 gate: valid symbols fetched = '.$successfulFetchCount);
             if (! $fetchResult['met_min_valid_symbols']) {
                 $this->warn('Stopping workflow: insufficient valid daily bars fetched.');
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Stopping workflow: insufficient valid daily bars fetched.',
+                    'valid_symbols' => $successfulFetchCount,
+                    'fetch_result' => $fetchResult,
+                ]);
 
                 return self::FAILURE;
             }
@@ -66,50 +86,103 @@ class WorkflowWeekendScan extends Command
 
             $ingestOutput = $this->runArtisanStep('Step 2/5', 'ingest daily snapshot', 'market:ingest-json', ['path' => $snapshotPath]);
             if ($ingestOutput === null) {
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Ingest daily snapshot step failed.',
+                    'failed_step' => 'market:ingest-json',
+                ]);
+
                 return self::FAILURE;
             }
             $ingestSuccessCount = $this->extractSummaryCount($ingestOutput, 'success count');
             if ($ingestSuccessCount <= 0) {
                 $this->warn('Stopping workflow: no successful daily snapshots ingested.');
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Stopping workflow: no successful daily snapshots ingested.',
+                    'ingest_success_count' => $ingestSuccessCount,
+                    'ingest_output' => $ingestOutput,
+                ]);
 
                 return self::FAILURE;
             }
 
             $metricsOutput = $this->runArtisanStep('Step 3/5', 'compute daily metrics', 'metrics:compute-daily');
             if ($metricsOutput === null) {
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Compute daily metrics step failed.',
+                    'failed_step' => 'metrics:compute-daily',
+                ]);
+
                 return self::FAILURE;
             }
             $metricsComputed = $this->extractSummaryCount($metricsOutput, 'metrics computed');
             if ($metricsComputed <= 0) {
                 $this->warn('Stopping workflow: no daily metrics computed.');
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Stopping workflow: no daily metrics computed.',
+                    'metrics_computed' => $metricsComputed,
+                    'metrics_output' => $metricsOutput,
+                ]);
 
                 return self::FAILURE;
             }
 
             $scanOutput = $this->runArtisanStep('Step 4/5', 'run weekend scan', 'scan:weekend');
             if ($scanOutput === null) {
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Weekend scan step failed.',
+                    'failed_step' => 'scan:weekend',
+                ]);
+
                 return self::FAILURE;
             }
             $scanPassed = $this->extractSummaryCount($scanOutput, 'passed');
             if ($scanPassed <= 0) {
                 $this->warn('Stopping workflow: no new weekend candidates passed filters.');
+                $this->finishRun($run, 'skipped', [
+                    'message' => 'Stopping workflow: no new weekend candidates passed filters.',
+                    'scan_passed' => $scanPassed,
+                    'scan_output' => $scanOutput,
+                ]);
 
                 return self::SUCCESS;
             }
 
             if ($this->runArtisanStep('Step 5/5', 'run Prompt A weekend rank', 'prompt:weekend-rank') === null) {
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Prompt A weekend rank step failed.',
+                    'failed_step' => 'prompt:weekend-rank',
+                ]);
+
                 return self::FAILURE;
             }
         } catch (Throwable $throwable) {
             $this->error('Step failed: '.$throwable->getMessage());
             $this->error('Workflow failed: weekend-scan');
+            $this->finishRun($run, 'failed', [
+                'message' => 'Workflow failed: weekend-scan',
+                'error_message' => $throwable->getMessage(),
+            ]);
 
             return self::FAILURE;
         }
 
         $this->info('Workflow completed: weekend-scan');
+        $this->finishRun($run, 'completed', [
+            'message' => 'Workflow completed: weekend-scan',
+        ]);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function finishRun(Run $run, string $status, array $meta): void
+    {
+        $run->status = $status;
+        $run->completed_at = now('UTC');
+        $run->meta_json = $meta;
+        $run->save();
     }
 
     /**

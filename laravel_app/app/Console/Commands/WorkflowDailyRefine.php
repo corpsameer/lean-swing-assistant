@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Run;
 use App\Services\IbkrHealthService;
 use App\Services\WorkflowDailyFetchService;
 use Illuminate\Console\Command;
@@ -17,11 +18,25 @@ class WorkflowDailyRefine extends Command
 
     public function handle(WorkflowDailyFetchService $dailyFetchService, IbkrHealthService $ibkrHealthService): int
     {
+        $run = Run::create([
+            'run_type' => 'workflow_daily_refine',
+            'status' => 'running',
+            'started_at' => now('UTC'),
+            'meta_json' => [
+                'message' => 'Workflow started: daily-refine',
+            ],
+        ]);
+
         $this->info('Starting workflow: daily-refine');
         $health = $ibkrHealthService->check();
         if (! $health['ok']) {
             $this->error('IBKR health check failed; skipping workflow safely.');
             $this->line('IBKR health details: '.$health['message']);
+            $this->finishRun($run, 'failed', [
+                'message' => 'IBKR health check failed; skipping workflow safely.',
+                'error_message' => $health['message'],
+                'ibkr_health' => $health,
+            ]);
 
             return self::FAILURE;
         }
@@ -49,6 +64,11 @@ class WorkflowDailyRefine extends Command
             $this->line('Step 1/4 gate: valid symbols fetched = '.$successfulFetchCount);
             if (! $fetchResult['met_min_valid_symbols']) {
                 $this->warn('Stopping workflow: insufficient valid daily bars fetched.');
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Stopping workflow: insufficient valid daily bars fetched.',
+                    'valid_symbols' => $successfulFetchCount,
+                    'fetch_result' => $fetchResult,
+                ]);
 
                 return self::FAILURE;
             }
@@ -66,39 +86,82 @@ class WorkflowDailyRefine extends Command
 
             $ingestOutput = $this->runArtisanStep('Step 2/4', 'ingest daily snapshot', 'market:ingest-json', ['path' => $snapshotPath]);
             if ($ingestOutput === null) {
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Ingest daily snapshot step failed.',
+                    'failed_step' => 'market:ingest-json',
+                ]);
+
                 return self::FAILURE;
             }
             $ingestSuccessCount = $this->extractSummaryCount($ingestOutput, 'success count');
             if ($ingestSuccessCount <= 0) {
                 $this->warn('Stopping workflow: no successful daily snapshots ingested.');
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Stopping workflow: no successful daily snapshots ingested.',
+                    'ingest_success_count' => $ingestSuccessCount,
+                    'ingest_output' => $ingestOutput,
+                ]);
 
                 return self::FAILURE;
             }
 
             $metricsOutput = $this->runArtisanStep('Step 3/4', 'compute daily metrics', 'metrics:compute-daily');
             if ($metricsOutput === null) {
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Compute daily metrics step failed.',
+                    'failed_step' => 'metrics:compute-daily',
+                ]);
+
                 return self::FAILURE;
             }
             $metricsComputed = $this->extractSummaryCount($metricsOutput, 'metrics computed');
             if ($metricsComputed <= 0) {
                 $this->warn('Stopping workflow: no daily metrics computed.');
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Stopping workflow: no daily metrics computed.',
+                    'metrics_computed' => $metricsComputed,
+                    'metrics_output' => $metricsOutput,
+                ]);
 
                 return self::FAILURE;
             }
 
             if ($this->runArtisanStep('Step 4/4', 'run Prompt B daily refine', 'prompt:daily-refine') === null) {
+                $this->finishRun($run, 'failed', [
+                    'message' => 'Prompt B daily refine step failed.',
+                    'failed_step' => 'prompt:daily-refine',
+                ]);
+
                 return self::FAILURE;
             }
         } catch (Throwable $throwable) {
             $this->error('Step failed: '.$throwable->getMessage());
             $this->error('Workflow failed: daily-refine');
+            $this->finishRun($run, 'failed', [
+                'message' => 'Workflow failed: daily-refine',
+                'error_message' => $throwable->getMessage(),
+            ]);
 
             return self::FAILURE;
         }
 
         $this->info('Workflow completed: daily-refine');
+        $this->finishRun($run, 'completed', [
+            'message' => 'Workflow completed: daily-refine',
+        ]);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function finishRun(Run $run, string $status, array $meta): void
+    {
+        $run->status = $status;
+        $run->completed_at = now('UTC');
+        $run->meta_json = $meta;
+        $run->save();
     }
 
     /**

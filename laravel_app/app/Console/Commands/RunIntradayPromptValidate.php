@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Run;
 use App\Services\IbkrHealthService;
 use App\Services\IntradayRefreshService;
 use App\Services\PromptCIntradayValidationService;
@@ -20,6 +21,8 @@ class RunIntradayPromptValidate extends Command
         IbkrHealthService $ibkrHealthService
     ): int
     {
+        $serviceStarted = false;
+
         try {
             $tradeCandidateMinScore = config('services.trade_candidate.min_score', 75);
             $tradeCandidateMinScore = is_numeric($tradeCandidateMinScore) ? (float) $tradeCandidateMinScore : 75.0;
@@ -29,6 +32,11 @@ class RunIntradayPromptValidate extends Command
             if (! $health['ok']) {
                 $this->error('IBKR health check failed; skipping workflow safely.');
                 $this->line('IBKR health details: '.$health['message']);
+                $this->recordRun('failed', [
+                    'message' => 'IBKR health check failed; skipping workflow safely.',
+                    'error_message' => $health['message'],
+                    'ibkr_health' => $health,
+                ]);
 
                 return self::FAILURE;
             }
@@ -39,6 +47,10 @@ class RunIntradayPromptValidate extends Command
 
             if ($symbols === []) {
                 $this->info('No active symbols found. Exiting cleanly.');
+                $this->recordRun('skipped', [
+                    'message' => 'No active symbols found. Exiting cleanly.',
+                    'active_symbols_resolved' => 0,
+                ]);
 
                 return self::SUCCESS;
             }
@@ -54,14 +66,26 @@ class RunIntradayPromptValidate extends Command
             $validCount = (int) ($ingestionSummary['success_count'] ?? 0);
             if ($validCount <= 0) {
                 $this->warn('Skipping intraday validation: no valid intraday current prices/bars fetched.');
+                $this->recordRun('skipped', [
+                    'message' => 'Skipping intraday validation: no valid intraday current prices/bars fetched.',
+                    'ingestion_summary' => $ingestionSummary,
+                ]);
 
                 return self::SUCCESS;
             }
             $this->line('continuing validation...');
 
+            $serviceStarted = true;
             $summary = $service->run();
         } catch (Throwable $throwable) {
             $this->error('Intraday validate prompt failed: '.$throwable->getMessage());
+
+            if (! $serviceStarted) {
+                $this->recordRun('failed', [
+                    'error_message' => $throwable->getMessage(),
+                    'message' => 'Intraday validate command failed before Prompt C run logging started.',
+                ]);
+            }
 
             return self::FAILURE;
         }
@@ -87,6 +111,20 @@ class RunIntradayPromptValidate extends Command
         $this->line('errors: '.$summary['errors']);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function recordRun(string $status, array $meta): void
+    {
+        Run::create([
+            'run_type' => 'intraday_validate',
+            'status' => $status,
+            'started_at' => now('UTC'),
+            'completed_at' => now('UTC'),
+            'meta_json' => $meta,
+        ]);
     }
 
     private function formatScore(float $score): string
