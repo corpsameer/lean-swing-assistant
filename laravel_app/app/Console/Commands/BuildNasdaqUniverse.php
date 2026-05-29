@@ -3,10 +3,12 @@
 namespace App\Console\Commands;
 
 use App\Models\Symbol;
+use App\Support\CommandRunLogger;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class BuildNasdaqUniverse extends Command
 {
@@ -18,8 +20,14 @@ class BuildNasdaqUniverse extends Command
 
     private const OTHER_URL = 'https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt';
 
-    public function handle(): int
+    public function handle(CommandRunLogger $runLogger): int
     {
+        $runId = $runLogger->start('nasdaq_universe', [
+            'command' => $this->signature,
+            'sources' => [self::NASDAQ_URL, self::OTHER_URL],
+        ]);
+
+        try {
         $this->line('Source URLs:');
         $this->line('- nasdaqlisted: '.self::NASDAQ_URL);
         $this->line('- otherlisted: '.self::OTHER_URL);
@@ -183,7 +191,33 @@ class BuildNasdaqUniverse extends Command
         }
         $this->line('Names truncated to fit DB columns: '.$truncatedNames);
 
-        return $symbolsList === [] ? self::FAILURE : self::SUCCESS;
+        $summary = [
+            'raw_symbols' => count($nasdaqRows) + count($otherRows),
+            'inserted' => $inserted,
+            'updated' => $updated,
+            'deactivated' => 0,
+            'active_total' => Symbol::query()->where('is_active', true)->count(),
+            'errors' => $symbolsList === [] ? 1 : 0,
+            'filtered_symbols' => count($symbolsList),
+            'skipped_test_issues' => $skippedTestIssues,
+            'skipped_etfs' => $skippedEtfs,
+            'skipped_instrument_type' => $skippedInstrumentType,
+        ];
+        if ($symbolsList === []) {
+            $runLogger->fail($runId, 'Nasdaq universe build produced no symbols.', ['summary' => $summary] + $summary);
+
+            return self::FAILURE;
+        }
+
+        $runLogger->complete($runId, ['summary' => $summary] + $summary);
+
+        return self::SUCCESS;
+        } catch (Throwable $throwable) {
+            $runLogger->fail($runId, $throwable->getMessage(), [
+                'exception_class' => $throwable::class,
+            ]);
+            throw $throwable;
+        }
     }
 
     /** @return array<int,array<string,string>> */

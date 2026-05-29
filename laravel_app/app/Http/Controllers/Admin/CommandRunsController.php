@@ -30,13 +30,16 @@ class CommandRunsController extends Controller
         'compute_daily_metrics' => ['symbols_scanned', 'metrics_computed', 'skipped_count', 'error_count'],
         'prompt_weekend_rank' => ['candidates', 'ranked', 'kept', 'rejected', 'errors'],
         'weekend_prompt_rank' => ['candidates_sent', 'candidates_ranked', 'candidates_updated', 'error_count', 'errors'],
+        'weekend_scan' => ['total_scanned', 'passed', 'rejected', 'valid_symbols', 'metrics_computed', 'message'],
+        'daily_refine' => ['valid_symbols', 'ingest_success_count', 'metrics_computed', 'message'],
         'workflow_weekend_scan' => ['message', 'error_message', 'failed_step', 'valid_symbols', 'scan_passed'],
         'workflow_daily_refine' => ['message', 'error_message', 'failed_step', 'valid_symbols', 'metrics_computed'],
         'ibkr_health_check' => ['message', 'error_message'],
         'build_ibkr_universe' => ['message', 'error_message', 'raw_symbols_returned', 'unique_symbols', 'inserted', 'updated', 'errors'],
         'intraday_validate' => ['active_candidates_scanned', 'candidates_sent_to_model', 'enter_now_count', 'wait_count', 'reject_count', 'trade_setups_created', 'skipped_score_below_threshold', 'skipped_missing_score', 'errors'],
-        'simulate_status' => ['orders_checked', 'entered', 'closed', 'tp_hit', 'sl_hit', 'errors'],
-        'trade_review' => ['closed_trades_found', 'trades_reviewed', 'skipped_already_reviewed', 'errors'],
+        'nasdaq_universe' => ['raw_symbols', 'inserted', 'updated', 'deactivated', 'active_total', 'errors'],
+        'simulate_status' => ['orders_checked', 'orders_updated', 'entered_count', 'closed_count', 'tp_hit_count', 'sl_hit_count', 'errors'],
+        'trade_review' => ['limit', 'trades_found', 'trades_reviewed', 'skipped_already_reviewed', 'errors'],
     ];
 
     public function index(Request $request)
@@ -136,9 +139,12 @@ class CommandRunsController extends Controller
 
         abort_if($run === null, 404);
 
+        $decoratedRun = $this->decorateRun($run);
+
         return view('admin.command-runs.show', [
-            'run' => $this->decorateRun($run),
+            'run' => $decoratedRun,
             'columns' => $columns,
+            'steps' => $this->metaSteps($decoratedRun->decoded_meta ?? []),
         ]);
     }
 
@@ -214,6 +220,15 @@ class CommandRunsController extends Controller
         }
 
         return '—';
+    }
+
+
+    /** @param array<string, mixed> $meta @return array<int, array<string, mixed>> */
+    private function metaSteps(array $meta): array
+    {
+        $steps = $meta['steps'] ?? [];
+
+        return is_array($steps) ? array_values(array_filter($steps, 'is_array')) : [];
     }
 
     private function compactValue(mixed $value): string

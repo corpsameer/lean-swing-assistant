@@ -7,6 +7,7 @@ use App\Models\PromptLog;
 use App\Models\Run;
 use App\Models\TradeSetup;
 use App\Models\WatchlistCandidate;
+use App\Support\CommandRunLogger;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -20,20 +21,23 @@ class PromptCIntradayValidationService
         private readonly OpenAiService $openAiService,
         private readonly PaperTradeExecutionService $paperTradeExecutionService,
         private readonly ActiveTradeGuardService $activeTradeGuardService,
+        private readonly CommandRunLogger $runLogger,
     ) {}
 
     /**
      * @return array{run_id:int,trade_candidate_min_score:float,active_candidates_scanned:int,candidates_sent_to_model:int,enter_now_count:int,wait_count:int,reject_count:int,trade_setups_created:int,skipped_score_below_threshold:int,skipped_missing_score:int,errors:int}
      */
-    public function run(): array
+    public function run(?int $runId = null): array
     {
         $tradeCandidateMinScore = $this->tradeCandidateMinScore();
 
-        $run = Run::create([
-            'run_type' => 'intraday_validate',
-            'status' => 'running',
-            'started_at' => now('UTC'),
-        ]);
+        $run = $runId !== null ? Run::query()->find($runId) : null;
+        if (! $run) {
+            $runId = $this->runLogger->start('intraday_validate', [
+                'source' => 'PromptCIntradayValidationService',
+            ]);
+            $run = Run::query()->findOrFail($runId);
+        }
 
         $summary = [
             'run_id' => $run->id,
@@ -53,8 +57,17 @@ class PromptCIntradayValidationService
             $candidates = $this->latestActiveCandidates();
             $summary['active_candidates_scanned'] = $candidates->count();
             $summary['skipped_candidates'] = [];
+            $this->runLogger->step((int) $run->id, 'prompt_c_validation', 'started', [
+                'active_candidates_scanned' => $summary['active_candidates_scanned'],
+            ]);
 
             if ($candidates->isEmpty()) {
+                $this->runLogger->step((int) $run->id, 'prompt_c_validation', 'completed', [
+                    'message' => 'No active candidates to validate.',
+                ]);
+                $this->runLogger->step((int) $run->id, 'trade_setup_creation', 'completed', [
+                    'trade_setups_created' => $summary['trade_setups_created'],
+                ]);
                 $this->completeRun($run, $summary);
 
                 return $summary;
@@ -76,12 +89,19 @@ class PromptCIntradayValidationService
             $summary['candidates_sent_to_model'] = count($eligibleRows);
 
             if ($summary['candidates_sent_to_model'] === 0) {
+                $this->runLogger->step((int) $run->id, 'prompt_c_validation', 'completed', [
+                    'message' => 'No candidates met Prompt C eligibility filters.',
+                    'candidates_sent_to_model' => 0,
+                ]);
                 $this->completeRun($run, $summary);
 
                 return $summary;
             }
 
             $promptPayload = $this->buildPromptPayload($eligibleRows);
+            $this->runLogger->step((int) $run->id, 'prompt_c_validation', 'started', [
+                'candidates_sent_to_model' => $summary['candidates_sent_to_model'],
+            ]);
             $openAiResult = $this->openAiService->requestStructuredJson($promptPayload);
             $parsedOutput = $this->parseModelOutput($openAiResult['content']);
 
@@ -228,19 +248,27 @@ class PromptCIntradayValidationService
                 }
             });
 
+            $this->runLogger->step((int) $run->id, 'trade_setup_creation', 'completed', [
+                'trade_setups_created' => $summary['trade_setups_created'],
+            ]);
+            $this->runLogger->step((int) $run->id, 'prompt_c_validation', 'completed', [
+                'enter_now_count' => $summary['enter_now_count'],
+                'wait_count' => $summary['wait_count'],
+                'reject_count' => $summary['reject_count'],
+            ]);
             $this->completeRun($run, $summary);
 
             return $summary;
         } catch (Throwable $throwable) {
             $summary['errors'] = 1;
 
-            $run->status = 'completed_with_errors';
-            $run->completed_at = now('UTC');
-            $run->meta_json = [
-                ...$summary,
-                'error_message' => $throwable->getMessage(),
-            ];
-            $run->save();
+            $this->runLogger->step((int) $run->id, 'prompt_c_validation', 'failed', [
+                'message' => $throwable->getMessage(),
+            ]);
+            $this->runLogger->fail((int) $run->id, $throwable->getMessage(), [
+                'exception_class' => $throwable::class,
+                'summary' => $summary,
+            ]);
 
             throw $throwable;
         }
@@ -577,10 +605,7 @@ class PromptCIntradayValidationService
 
     private function completeRun(Run $run, array $summary): void
     {
-        $run->status = 'completed';
-        $run->completed_at = now('UTC');
-        $run->meta_json = $summary;
-        $run->save();
+        $this->runLogger->complete((int) $run->id, ['summary' => $summary] + $summary);
     }
 
     private function isNearBand(float $currentPrice, float $triggerBandLow, float $triggerBandHigh, float $toleranceFraction): bool
