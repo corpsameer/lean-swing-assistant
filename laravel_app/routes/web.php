@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\CommandRunsController;
 use App\Http\Controllers\Admin\SymbolsController;
 use App\Http\Controllers\Admin\WatchlistController;
 use App\Http\Controllers\AnalyticsController;
@@ -27,4 +28,6 @@ Route::middleware('auth')->prefix('admin')->group(function () {
     Route::get('/analytics', [AnalyticsController::class, 'index']);
     Route::get('/symbols', [SymbolsController::class, 'index']);
     Route::get('/watchlist', [WatchlistController::class, 'index']);
+    Route::get('/command-runs', [CommandRunsController::class, 'index']);
+    Route::get('/command-runs/{id}', [CommandRunsController::class, 'show'])->whereNumber('id');
 });
