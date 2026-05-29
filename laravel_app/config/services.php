@@ -80,4 +80,12 @@ return [
         'timeout_seconds' => env('STATUS_SYNC_TIMEOUT_SECONDS', 30),
     ],
 
+    'market_window' => [
+        'timezone' => env('US_MARKET_TIMEZONE', 'America/New_York'),
+        'intraday_validate_start' => env('INTRADAY_VALIDATE_START_ET', '09:30'),
+        'intraday_validate_end' => env('INTRADAY_VALIDATE_END_ET', '15:45'),
+        'simulate_status_start' => env('SIMULATE_STATUS_START_ET', '09:30'),
+        'simulate_status_end' => env('SIMULATE_STATUS_END_ET', '16:10'),
+    ],
+
 ];

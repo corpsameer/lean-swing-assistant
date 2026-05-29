@@ -44,7 +44,8 @@ Final scheduler lifecycle:
 - Sunday 17:00 ET: `universe:build-nasdaq`
 - Sunday 18:00 ET: `workflow:weekend-scan`
 - Weekdays 05:30 ET: `workflow:daily-refine`
-- Market hours: `prompt:intraday-validate` and `trades:simulate-status`
+- US weekdays 09:30-15:45 ET: `prompt:intraday-validate`
+- US weekdays 09:30-16:10 ET: `trades:simulate-status`
 - Weekdays 16:30 ET: `prompt:trade-review --limit=20`
 
 Heavy universe/workflow jobs run outside intraday market workflows and use extended overlap locks.
@@ -139,6 +140,7 @@ tail -f storage/logs/scheduler-simulate-status.log
 - Weekend scan is scheduled Sunday 18:00 `America/New_York`.
 - `universe:build-ibkr` remains available for manual testing only; it is not scheduled.
 - T15 exit outcome/PnL tracking runs through `trades:simulate-status`.
+- Command-level guards also enforce the intraday validation and simulated status market windows, so unexpected cron/scheduler timezone behavior skips safely outside those windows.
 - T16 trade reviews run automatically via `prompt:trade-review --limit=20` (16:30 `America/New_York`, after the 16:10 final simulated status sync).
 - IBKR Gateway/TWS setup is handled separately in **T14.5**.
 - Scheduler can run the simulated system once data connectivity is available.
