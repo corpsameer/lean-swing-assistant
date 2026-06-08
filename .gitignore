@@ -27,3 +27,11 @@ Thumbs.db
 # Logs / temp
 *.log
 *.tmp
+
+laravel_app/storage/app/*.json
+laravel_app/storage/app/*.csv
+
+laravel_app/storage/app/*
+!laravel_app/storage/app/.gitignore
+!laravel_app/storage/app/public/
+!laravel_app/storage/app/private/
